@@ -1,0 +1,369 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
+import { useAuth } from '../hooks/useAuth'
+import Layout from '../components/Layout'
+
+const SPH_VALUES = ['Plano', ...Array.from({ length: 80 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 80 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0'))]
+const CYL_VALUES = ['-', '+000', ...Array.from({ length: 16 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]
+const AXIS_VALUES = ['-', '90', '180']
+const ADD_VALUES  = ['-', ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]
+const PAYMENT_METHODS = ['Cash', 'POS', 'Transfer', 'NIL']
+
+function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
+  let q = base
+  sph      === null ? q = q.is('sph',      null) : q = q.eq('sph',      sph)
+  cyl      === null ? q = q.is('cyl',      null) : q = q.eq('cyl',      cyl)
+  axis     === null ? q = q.is('axis',     null) : q = q.eq('axis',     axis)
+  addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition)
+  name_key === null ? q = q.is('name_key', null) : q = q.eq('name_key', name_key)
+  return q
+}
+
+export default function Sales() {
+  const { profile } = useAuth()
+  const [products, setProducts]       = useState([])
+  const [locations, setLocations]     = useState([])
+  const [classes, setClasses]         = useState([])
+  const [recentSales, setRecentSales] = useState([])
+  const [availableStock, setAvailableStock] = useState(null)
+  const [stockLoading, setStockLoading]     = useState(false)
+
+  const [form, setForm] = useState({
+    class_id: '', product_id: '', location_id: '',
+    sph: 'Plano', cyl: '-', axis: '-', addition: '-',
+    qty: '', unit_price: '', amount_paid: '', payment_method: 'Cash',
+    customer_name: '', notes: '',
+  })
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg]         = useState({ type: '', text: '' })
+
+  useEffect(() => {
+    if (profile?.company_id) {
+      fetchClasses()
+      fetchLocations()
+      fetchRecentSales()
+    }
+  }, [profile])
+
+  useEffect(() => { if (form.class_id) fetchProducts(form.class_id) }, [form.class_id])
+
+  useEffect(() => {
+    if (form.product_id && form.location_id) checkStock()
+  }, [form.product_id, form.location_id, form.sph, form.cyl, form.axis, form.addition])
+
+  async function fetchClasses() {
+    const { data } = await supabase.from('product_classes').select('*').eq('company_id', profile.company_id).order('name')
+    setClasses(data || [])
+    if (data?.length) setForm(f => ({ ...f, class_id: data[0].id }))
+  }
+
+  async function fetchProducts(classId) {
+    const { data } = await supabase.from('products').select('*').eq('company_id', profile.company_id).eq('class_id', classId).eq('is_active', true).order('name')
+    setProducts(data || [])
+    setForm(f => ({ ...f, product_id: data?.[0]?.id || '' }))
+  }
+
+  async function fetchLocations() {
+    const { data } = await supabase.from('locations').select('*').eq('company_id', profile.company_id).order('name')
+    setLocations(data || [])
+    if (profile?.location_id) setForm(f => ({ ...f, location_id: profile.location_id }))
+    else if (data?.length) setForm(f => ({ ...f, location_id: data[0].id }))
+  }
+
+  async function fetchRecentSales() {
+    const { data } = await supabase
+      .from('transactions').select('*, products(name), locations(name, code)')
+      .eq('company_id', profile.company_id).eq('type', 'SALE')
+      .order('created_at', { ascending: false }).limit(10)
+    setRecentSales(data || [])
+  }
+
+  function update(field, value) { setForm(f => ({ ...f, [field]: value })) }
+
+  function flash(type, text) {
+    setMsg({ type, text })
+    setTimeout(() => setMsg({ type: '', text: '' }), 5000)
+  }
+
+  const selectedProduct = products.find(p => p.id === form.product_id)
+  const specType  = selectedProduct?.spec_type || 'sph_add'
+  const isUtility = specType === 'name_only'
+  const totalAmount = (Number(form.qty) * Number(form.unit_price)) || 0
+  const balance     = totalAmount - (Number(form.amount_paid) || 0)
+
+  function getSpecs() {
+    return {
+      sph:      isUtility ? null : form.sph,
+      cyl:      isUtility ? null : (specType === 'sph_add' ? null : form.cyl),
+      axis:     isUtility ? null : (specType === 'sph_cyl_axis_add' ? form.axis : null),
+      addition: isUtility ? null : (specType === 'sph_cyl' ? null : form.addition),
+      name_key: isUtility ? selectedProduct?.name : null,
+    }
+  }
+
+  async function checkStock() {
+    if (!form.product_id || !form.location_id) return
+    setStockLoading(true)
+    const sel = products.find(p => p.id === form.product_id)
+    if (!sel) { setStockLoading(false); return }
+
+    const specs = {
+      sph:      sel.spec_type === 'name_only' ? null : form.sph,
+      cyl:      sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_add' ? null : form.cyl),
+      axis:     sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl_axis_add' ? form.axis : null),
+      addition: sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl' ? null : form.addition),
+      name_key: sel.spec_type === 'name_only' ? sel.name : null,
+    }
+
+    const base = supabase.from('stock').select('qty')
+      .eq('product_id', form.product_id)
+      .eq('location_id', form.location_id)
+
+    const { data } = await buildStockQuery(base, specs).maybeSingle()
+    setAvailableStock(data?.qty ?? 0)
+    setStockLoading(false)
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    const qty = Number(form.qty)
+    if (!form.product_id || !form.location_id) { flash('error', 'Product and location required'); return }
+    if (!qty || qty <= 0) { flash('error', 'Qty must be a positive number'); return }
+    if (availableStock !== null && qty > availableStock) {
+      flash('error', `Oversell blocked — only ${availableStock} available at this location`)
+      return
+    }
+
+    setLoading(true)
+    const specs = getSpecs()
+
+    const base = supabase.from('stock').select('id, qty')
+      .eq('product_id', form.product_id)
+      .eq('location_id', form.location_id)
+
+    const { data: stockRow } = await buildStockQuery(base, specs).maybeSingle()
+
+    if (!stockRow || stockRow.qty < qty) {
+      flash('error', `Oversell blocked — only ${stockRow?.qty ?? 0} available`)
+      setAvailableStock(stockRow?.qty ?? 0)
+      setLoading(false)
+      return
+    }
+
+    const { error: deductError } = await supabase
+      .from('stock').update({ qty: stockRow.qty - qty, updated_at: new Date() }).eq('id', stockRow.id)
+
+    if (deductError) { flash('error', deductError.message); setLoading(false); return }
+
+    await supabase.from('transactions').insert({
+      company_id: profile.company_id, type: 'SALE',
+      product_id: form.product_id, location_id: form.location_id,
+      ...specs, qty,
+      unit_price:     Number(form.unit_price) || null,
+      total_amount:   totalAmount || null,
+      amount_paid:    Number(form.amount_paid) || null,
+      balance:        balance || null,
+      payment_method: form.payment_method,
+      customer_name:  form.customer_name || null,
+      notes:          form.notes || null,
+      created_by:     profile.id,
+    })
+
+    await supabase.from('audit_log').insert({
+      company_id: profile.company_id, user_id: profile.id,
+      status: 'SUCCESS', action: 'SALE',
+      details: { product: selectedProduct?.name, location: locations.find(l => l.id === form.location_id)?.code, ...specs, qty, total_amount: totalAmount },
+    })
+
+    flash('success', `Sale recorded — ${selectedProduct?.name} -${qty}`)
+    setForm(f => ({ ...f, qty: '', unit_price: '', amount_paid: '', customer_name: '', notes: '' }))
+    setAvailableStock(v => v !== null ? v - qty : null)
+    fetchRecentSales()
+    setLoading(false)
+  }
+
+  return (
+    <Layout>
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        <h2 className="text-2xl font-bold text-slate-800 mb-1">Sales entry</h2>
+        <p className="text-slate-500 text-sm mb-8">Record a sale. Overselling is automatically blocked.</p>
+
+        <div className="grid grid-cols-5 gap-8">
+          <div className="col-span-3">
+            <div className="bg-white rounded-2xl border border-slate-200 p-6">
+              <form onSubmit={handleSubmit} className="space-y-5">
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+                  <select value={form.location_id} onChange={e => update('location_id', e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product class</label>
+                  <select value={form.class_id} onChange={e => update('class_id', e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+                  <select value={form.product_id} onChange={e => update('product_id', e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                {!isUtility && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">SPH / Base</label>
+                      <select value={form.sph} onChange={e => update('sph', e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                        {SPH_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">CYL</label>
+                        <select value={form.cyl} onChange={e => update('cyl', e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                          {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {specType === 'sph_cyl_axis_add' && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Axis</label>
+                        <select value={form.axis} onChange={e => update('axis', e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                          {AXIS_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
+                        <select value={form.addition} onChange={e => update('addition', e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                          {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Stock indicator */}
+                <div className={`rounded-lg px-4 py-3 text-sm font-medium ${
+                  availableStock === null ? 'bg-slate-50 text-slate-400' :
+                  availableStock === 0    ? 'bg-red-50 border border-red-200 text-red-700' :
+                  availableStock <= 5     ? 'bg-amber-50 border border-amber-200 text-amber-700' :
+                                            'bg-green-50 border border-green-200 text-green-700'
+                }`}>
+                  {stockLoading ? 'Checking stock...' :
+                   availableStock === null ? 'Select a product and location' :
+                   availableStock === 0    ? 'Out of stock at this location' :
+                                            `Available: ${availableStock} units`}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Qty</label>
+                    <input type="number" min="1" required value={form.qty}
+                      onChange={e => update('qty', e.target.value)} placeholder="e.g. 2"
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Unit price</label>
+                    <input type="number" min="0" value={form.unit_price}
+                      onChange={e => update('unit_price', e.target.value)} placeholder="e.g. 5000"
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  </div>
+                </div>
+
+                {totalAmount > 0 && (
+                  <div className="bg-slate-50 rounded-lg px-4 py-3 flex justify-between text-sm">
+                    <span className="text-slate-500">Total</span>
+                    <span className="font-semibold text-slate-800">₦{totalAmount.toLocaleString()}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Amount paid</label>
+                    <input type="number" min="0" value={form.amount_paid}
+                      onChange={e => update('amount_paid', e.target.value)} placeholder="e.g. 5000"
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Payment method</label>
+                    <select value={form.payment_method} onChange={e => update('payment_method', e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                      {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {balance > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex justify-between text-sm">
+                    <span className="text-amber-700">Balance owed</span>
+                    <span className="font-semibold text-amber-800">₦{balance.toLocaleString()}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Customer name <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input type="text" value={form.customer_name} onChange={e => update('customer_name', e.target.value)}
+                    placeholder="e.g. John Doe"
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <textarea value={form.notes} onChange={e => update('notes', e.target.value)}
+                    placeholder="Any additional notes..." rows={2}
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none" />
+                </div>
+
+                {msg.text && (
+                  <div className={`text-sm rounded-lg px-4 py-3 ${msg.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+                    {msg.text}
+                  </div>
+                )}
+
+                <button type="submit" disabled={loading || availableStock === 0}
+                  className="w-full bg-slate-900 text-white py-2.5 rounded-lg font-medium hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? 'Recording sale...' : 'Record sale'}
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div className="col-span-2">
+            <h3 className="font-semibold text-slate-700 mb-3 text-sm">Recent sales</h3>
+            <div className="space-y-2">
+              {recentSales.length === 0 && <p className="text-slate-400 text-sm">No sales yet.</p>}
+              {recentSales.map(sale => (
+                <div key={sale.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3">
+                  <div className="flex justify-between items-start">
+                    <p className="font-medium text-slate-800 text-sm">{sale.products?.name}</p>
+                    {sale.total_amount && <span className="text-xs font-semibold text-slate-700">₦{Number(sale.total_amount).toLocaleString()}</span>}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    -{sale.qty} · {sale.locations?.code} · {sale.sph || sale.name_key || '—'}
+                    {sale.addition ? ' / ' + sale.addition : ''}
+                  </p>
+                  {sale.customer_name && <p className="text-xs text-slate-400">{sale.customer_name}</p>}
+                  <p className="text-xs text-slate-300 mt-0.5">{new Date(sale.created_at).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Layout>
+  )
+}
