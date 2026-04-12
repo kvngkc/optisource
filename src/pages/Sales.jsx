@@ -37,29 +37,49 @@ export default function Sales() {
   const [msg, setMsg]         = useState({ type: '', text: '' })
 
   useEffect(() => {
-    if (profile?.company_id) { fetchClasses(); fetchLocations(); fetchRecentSales() }
+    if (profile?.company_id) {
+      fetchClasses()
+      fetchLocations()
+      fetchRecentSales()
+    }
   }, [profile])
-  useEffect(() => { if (form.class_id) fetchProducts(form.class_id) }, [form.class_id])
-  useEffect(() => { if (form.product_id && form.location_id) checkStock() }, [form.product_id, form.location_id, form.sph, form.cyl, form.axis, form.addition])
+
+  useEffect(() => {
+    if (form.class_id) fetchProducts(form.class_id)
+  }, [form.class_id])
+
+  useEffect(() => {
+    if (form.product_id && form.location_id) checkStock()
+  }, [form.product_id, form.location_id, form.sph, form.cyl, form.axis, form.addition])
+
+  useEffect(() => {
+    if (form.product_id) loadDefaultPrice()
+  }, [form.product_id, form.sph, form.cyl, form.addition])
 
   async function fetchClasses() {
     const { data } = await supabase.from('product_classes').select('*').eq('company_id', profile.company_id).order('name')
     setClasses(data || [])
     if (data?.length) setForm(f => ({ ...f, class_id: data[0].id }))
   }
+
   async function fetchProducts(classId) {
     const { data } = await supabase.from('products').select('*').eq('company_id', profile.company_id).eq('class_id', classId).eq('is_active', true).order('name')
     setProducts(data || [])
     setForm(f => ({ ...f, product_id: data?.[0]?.id || '' }))
   }
+
   async function fetchLocations() {
     const { data } = await supabase.from('locations').select('*').eq('company_id', profile.company_id).order('name')
     setLocations(data || [])
     if (profile?.location_id) setForm(f => ({ ...f, location_id: profile.location_id }))
     else if (data?.length) setForm(f => ({ ...f, location_id: data[0].id }))
   }
+
   async function fetchRecentSales() {
-    const { data } = await supabase.from('transactions').select('*, products(name), locations(name, code)').eq('company_id', profile.company_id).eq('type', 'SALE').order('created_at', { ascending: false }).limit(8)
+    const { data } = await supabase
+      .from('transactions').select('*, products(name), locations(name, code)')
+      .eq('company_id', profile.company_id).eq('type', 'SALE')
+      .order('created_at', { ascending: false }).limit(8)
     setRecentSales(data || [])
   }
 
@@ -80,6 +100,27 @@ export default function Sales() {
       addition: isUtility ? null : (specType === 'sph_cyl' ? null : form.addition),
       name_key: isUtility ? selectedProduct?.name : null,
     }
+  }
+
+  async function loadDefaultPrice() {
+    const sel = products.find(p => p.id === form.product_id)
+    if (!sel || sel.spec_type === 'name_only') return
+
+    let q = supabase.from('product_prices').select('price')
+      .eq('company_id', profile.company_id)
+      .eq('product_id', form.product_id)
+
+    const sph      = form.sph
+    const cyl      = sel.spec_type === 'sph_add' ? null : form.cyl
+    const addition = sel.spec_type === 'sph_cyl' ? null : form.addition
+
+    sph      === null ? q = q.is('sph', null)      : q = q.eq('sph', sph)
+    cyl      === null ? q = q.is('cyl', null)      : q = q.eq('cyl', cyl)
+    addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition)
+    q = q.is('axis', null).is('name_key', null)
+
+    const { data } = await q.maybeSingle()
+    if (data?.price) setForm(f => ({ ...f, unit_price: String(data.price) }))
   }
 
   async function checkStock() {
@@ -107,41 +148,57 @@ export default function Sales() {
     if (availableStock !== null && qty > availableStock) {
       flash('error', `Oversell blocked — only ${availableStock} available`); return
     }
+
     setLoading(true)
     const specs = getSpecs()
     const base  = supabase.from('stock').select('id, qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
     const { data: stockRow } = await buildStockQuery(base, specs).maybeSingle()
+
     if (!stockRow || stockRow.qty < qty) {
       flash('error', `Oversell blocked — only ${stockRow?.qty ?? 0} available`)
       setAvailableStock(stockRow?.qty ?? 0); setLoading(false); return
     }
+
     await supabase.from('stock').update({ qty: stockRow.qty - qty, updated_at: new Date() }).eq('id', stockRow.id)
+
     await supabase.from('transactions').insert({
-      company_id: profile.company_id, type: 'SALE',
-      product_id: form.product_id, location_id: form.location_id,
-      ...specs, qty,
-      unit_price: Number(form.unit_price) || null,
-      total_amount: totalAmount || null,
-      amount_paid: Number(form.amount_paid) || null,
-      balance: balance || null,
+      company_id:     profile.company_id,
+      type:           'SALE',
+      product_id:     form.product_id,
+      location_id:    form.location_id,
+      ...specs,
+      qty,
+      unit_price:     Number(form.unit_price) || null,
+      total_amount:   totalAmount || null,
+      amount_paid:    Number(form.amount_paid) || null,
+      balance:        balance > 0 ? balance : null,
       payment_method: form.payment_method,
-      customer_name: form.customer_name || null,
-      notes: form.notes || null,
-      created_by: profile.id,
+      customer_name:  form.customer_name || null,
+      notes:          form.notes || null,
+      created_by:     profile.id,
     })
+
     await supabase.from('audit_log').insert({
-      company_id: profile.company_id, user_id: profile.id,
-      status: 'SUCCESS', action: 'SALE',
-      details: { product: selectedProduct?.name, location: locations.find(l => l.id === form.location_id)?.code, ...specs, qty, total_amount: totalAmount },
+      company_id: profile.company_id,
+      user_id:    profile.id,
+      status:     'SUCCESS',
+      action:     'SALE',
+      details: {
+        product:      selectedProduct?.name,
+        location:     locations.find(l => l.id === form.location_id)?.code,
+        ...specs, qty,
+        total_amount: totalAmount,
+      },
     })
+
     flash('success', `Sale recorded — ${selectedProduct?.name} -${qty}`)
-    setForm(f => ({ ...f, qty: '', unit_price: '', amount_paid: '', customer_name: '', notes: '' }))
+    setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', notes: '' }))
     setAvailableStock(v => v !== null ? v - qty : null)
     fetchRecentSales()
     setLoading(false)
   }
 
-  const selectClass = "w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-base"
+  const sc = "w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-base"
 
   return (
     <Layout>
@@ -154,21 +211,21 @@ export default function Sales() {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
-              <select value={form.location_id} onChange={e => update('location_id', e.target.value)} className={selectClass}>
+              <select value={form.location_id} onChange={e => update('location_id', e.target.value)} className={sc}>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Product class</label>
-              <select value={form.class_id} onChange={e => update('class_id', e.target.value)} className={selectClass}>
+              <select value={form.class_id} onChange={e => update('class_id', e.target.value)} className={sc}>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
-              <select value={form.product_id} onChange={e => update('product_id', e.target.value)} className={selectClass}>
+              <select value={form.product_id} onChange={e => update('product_id', e.target.value)} className={sc}>
                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
@@ -177,14 +234,14 @@ export default function Sales() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">SPH</label>
-                  <select value={form.sph} onChange={e => update('sph', e.target.value)} className={selectClass}>
+                  <select value={form.sph} onChange={e => update('sph', e.target.value)} className={sc}>
                     {SPH_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
                 {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">CYL</label>
-                    <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={selectClass}>
+                    <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>
                       {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
@@ -192,7 +249,7 @@ export default function Sales() {
                 {specType === 'sph_cyl_axis_add' && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Axis</label>
-                    <select value={form.axis} onChange={e => update('axis', e.target.value)} className={selectClass}>
+                    <select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>
                       {AXIS_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
@@ -200,7 +257,7 @@ export default function Sales() {
                 {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
-                    <select value={form.addition} onChange={e => update('addition', e.target.value)} className={selectClass}>
+                    <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>
                       {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
@@ -229,7 +286,10 @@ export default function Sales() {
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Unit price (₦)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Unit price (₦)
+                  {form.unit_price && <span className="text-xs text-green-600 ml-1">auto-filled</span>}
+                </label>
                 <input type="number" min="0" value={form.unit_price}
                   onChange={e => update('unit_price', e.target.value)} placeholder="0"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
@@ -252,7 +312,7 @@ export default function Sales() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Payment</label>
-                <select value={form.payment_method} onChange={e => update('payment_method', e.target.value)} className={selectClass}>
+                <select value={form.payment_method} onChange={e => update('payment_method', e.target.value)} className={sc}>
                   {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
@@ -266,14 +326,19 @@ export default function Sales() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Customer name <span className="text-slate-400 font-normal">(optional)</span></label>
-              <input type="text" value={form.customer_name} onChange={e => update('customer_name', e.target.value)}
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Customer name <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
+              <input type="text" value={form.customer_name}
+                onChange={e => update('customer_name', e.target.value)}
                 placeholder="e.g. John Doe"
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Notes <span className="text-slate-400 font-normal">(optional)</span></label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Notes <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
               <textarea value={form.notes} onChange={e => update('notes', e.target.value)}
                 placeholder="Additional notes..." rows={2}
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base resize-none" />
@@ -292,7 +357,6 @@ export default function Sales() {
           </form>
         </div>
 
-        {/* Recent sales */}
         <h3 className="font-semibold text-slate-700 mb-3 text-sm">Recent sales</h3>
         <div className="space-y-2">
           {recentSales.length === 0 && <p className="text-slate-400 text-sm">No sales yet.</p>}
@@ -301,7 +365,8 @@ export default function Sales() {
               <div>
                 <p className="font-medium text-slate-800 text-sm">{sale.products?.name}</p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {sale.locations?.code} · {sale.sph || sale.name_key || '—'}{sale.addition ? ' / ' + sale.addition : ''}
+                  {sale.locations?.code} · {sale.sph || sale.name_key || '—'}
+                  {sale.addition ? ' / ' + sale.addition : ''}
                   {sale.customer_name ? ' · ' + sale.customer_name : ''}
                 </p>
               </div>

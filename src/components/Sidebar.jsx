@@ -4,19 +4,23 @@ import { useAuth } from '../hooks/useAuth'
 
 const NAV = {
   company_admin: [
-    { label: 'Dashboard',   path: '/dashboard',        icon: '▪' },
-    { label: 'Inventory',   path: '/inventory',         icon: '▪' },
-    { label: 'Sales',       path: '/sales',             icon: '▪' },
-    { label: 'Stock query', path: '/query',             icon: '▪' },
-    { label: 'Audit log',   path: '/audit',             icon: '▪' },
-    { label: 'Locations',   path: '/admin/locations',   icon: '▪' },
-    { label: 'Products',    path: '/admin/products',    icon: '▪' },
-    { label: 'Staff',       path: '/admin/staff',       icon: '▪' },
+    { label: 'Dashboard',   path: '/dashboard' },
+    { label: 'Inventory',   path: '/inventory' },
+    { label: 'Sales',       path: '/sales' },
+    { label: 'Debtors',     path: '/debtors' },
+    { label: 'Stock query', path: '/query' },
+    { label: 'Audit log',   path: '/audit' },
+    { label: 'Export',      path: '/export' },
+    { label: 'Locations',   path: '/admin/locations' },
+    { label: 'Products',    path: '/admin/products' },
+    { label: 'Prices',      path: '/admin/prices' },
+    { label: 'Staff',       path: '/admin/staff' },
   ],
   staff: [
     { label: 'Dashboard',   path: '/dashboard',  icon: '▪' },
     { label: 'Inventory',   path: '/inventory',  icon: '▪' },
     { label: 'Sales',       path: '/sales',      icon: '▪' },
+    { label: 'Debtors',     path: '/debtors',    icon: '▪' },
     { label: 'Stock query', path: '/query',      icon: '▪' },
   ],
   optician: [
