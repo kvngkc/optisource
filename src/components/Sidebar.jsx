@@ -16,6 +16,7 @@ const NAV = {
     { label: 'Prices',      path: '/admin/prices' },
     { label: 'Staff',       path: '/admin/staff' },
     { label: 'Settings',    path: '/admin/settings' },
+    { label: 'Migrate',     path: '/admin/migrate' },
   ],
   staff: [
     { label: 'Dashboard',   path: '/dashboard' },
@@ -38,7 +39,7 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* ── MOBILE TOP BAR ── */}
+      {/* MOBILE TOP BAR */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <div>
           <p className="font-bold text-base leading-tight">Optisource</p>
@@ -54,7 +55,7 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* ── MOBILE DRAWER ── */}
+      {/* MOBILE DRAWER */}
       {open && (
         <div className="lg:hidden fixed inset-0 z-40 flex">
           <div className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-2xl pt-16">
@@ -88,13 +89,13 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* ── DESKTOP SIDEBAR ── */}
+      {/* DESKTOP SIDEBAR */}
       <div className="hidden lg:flex w-56 min-h-screen bg-slate-900 text-white flex-col flex-shrink-0">
         <div className="px-5 py-6 border-b border-slate-700">
           <h1 className="text-xl font-bold">Optisource</h1>
           <p className="text-xs text-slate-400 mt-1 truncate">{profile?.companies?.name}</p>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {links.map(link => (
             <Link
               key={link.path}
