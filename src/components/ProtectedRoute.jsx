@@ -1,10 +1,10 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth()
+  const location = useLocation()
 
-  // Still checking session — never redirect during this phase
   if (loading || user === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -17,6 +17,11 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (!user) return <Navigate to="/login" replace />
+
+  // Opticians have no company — /dashboard shows nothing for them
+  if (profile?.role === 'optician' && location.pathname === '/dashboard') {
+    return <Navigate to="/query" replace />
+  }
 
   if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
     return <Navigate to="/dashboard" replace />

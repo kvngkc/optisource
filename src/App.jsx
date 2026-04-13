@@ -6,6 +6,7 @@ import Locations      from './pages/admin/Locations'
 import Products       from './pages/admin/Products'
 import Prices         from './pages/admin/Prices'
 import Staff          from './pages/admin/Staff'
+import Settings       from './pages/admin/Settings'
 import Inventory      from './pages/Inventory'
 import Sales          from './pages/Sales'
 import StockQuery     from './pages/StockQuery'
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/admin/products"  element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Products /></ProtectedRoute>} />
         <Route path="/admin/prices"    element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Prices /></ProtectedRoute>} />
         <Route path="/admin/staff"     element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Staff /></ProtectedRoute>} />
+        <Route path="/admin/settings"  element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Settings /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

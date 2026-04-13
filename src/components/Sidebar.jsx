@@ -15,17 +15,17 @@ const NAV = {
     { label: 'Products',    path: '/admin/products' },
     { label: 'Prices',      path: '/admin/prices' },
     { label: 'Staff',       path: '/admin/staff' },
+    { label: 'Settings',    path: '/admin/settings' },
   ],
   staff: [
-    { label: 'Dashboard',   path: '/dashboard',  icon: '▪' },
-    { label: 'Inventory',   path: '/inventory',  icon: '▪' },
-    { label: 'Sales',       path: '/sales',      icon: '▪' },
-    { label: 'Debtors',     path: '/debtors',    icon: '▪' },
-    { label: 'Stock query', path: '/query',      icon: '▪' },
+    { label: 'Dashboard',   path: '/dashboard' },
+    { label: 'Inventory',   path: '/inventory' },
+    { label: 'Sales',       path: '/sales' },
+    { label: 'Debtors',     path: '/debtors' },
+    { label: 'Stock query', path: '/query' },
   ],
   optician: [
-    { label: 'Dashboard',   path: '/dashboard',  icon: '▪' },
-    { label: 'Stock query', path: '/query',      icon: '▪' },
+    { label: 'Stock query', path: '/query' },
   ],
 }
 
