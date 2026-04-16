@@ -33,6 +33,36 @@ const NAV = {
       ],
     },
   ],
+  super_admin: [
+    {
+      group: 'Operations',
+      links: [
+        { label: 'Dashboard', path: '/dashboard' },
+        { label: 'Inventory', path: '/inventory' },
+        { label: 'Sales', path: '/sales' },
+        { label: 'Debtors', path: '/debtors' },
+      ],
+    },
+    {
+      group: 'Reports',
+      links: [
+        { label: 'Stock query', path: '/query' },
+        { label: 'Audit log', path: '/audit' },
+        { label: 'Export', path: '/export' },
+      ],
+    },
+    {
+      group: 'Admin',
+      links: [
+        { label: 'Locations', path: '/admin/locations' },
+        { label: 'Products', path: '/admin/products' },
+        { label: 'Prices', path: '/admin/prices' },
+        { label: 'Staff', path: '/admin/staff' },
+        { label: 'Settings', path: '/admin/settings' },
+        { label: 'Migrate', path: '/admin/migrate' },
+      ],
+    },
+  ],
   staff: [
     {
       group: 'Operations',
@@ -160,9 +190,9 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* ── DESKTOP SIDEBAR ── */}
-      <div className="hidden lg:flex w-56 min-h-screen bg-slate-900 text-white flex-col flex-shrink-0">
-        <div className="px-5 py-6 border-b border-slate-700">
+      {/* ── DESKTOP SIDEBAR — fixed so it never scrolls ── */}
+      <div className="hidden lg:flex fixed top-0 left-0 h-screen w-56 bg-slate-900 text-white flex-col z-30">
+        <div className="px-5 py-6 border-b border-slate-700 flex-shrink-0">
           <h1 className="text-xl font-bold">Optisource</h1>
           <p className="text-xs text-slate-400 mt-1 truncate">{profile?.companies?.name}</p>
         </div>
@@ -177,7 +207,7 @@ export default function Sidebar() {
             />
           ))}
         </nav>
-        <div className="px-5 py-4 border-t border-slate-700">
+        <div className="px-5 py-4 border-t border-slate-700 flex-shrink-0">
           <p className="text-xs text-slate-400 truncate mb-1">{profile?.full_name}</p>
           <p className="text-xs text-slate-500 capitalize mb-3">{profile?.role?.replace('_', ' ')}</p>
           <button onClick={signOut} className="text-xs text-slate-400 hover:text-white transition-colors">
