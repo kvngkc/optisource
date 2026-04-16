@@ -13,7 +13,6 @@ import Products       from './pages/admin/Products'
 import Prices         from './pages/admin/Prices'
 import Staff          from './pages/admin/Staff'
 import Settings       from './pages/admin/Settings'
-import Migrate        from './pages/admin/Migrate'
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -37,7 +36,8 @@ export default function App() {
         <Route path="/admin/prices"    element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Prices /></ProtectedRoute>} />
         <Route path="/admin/staff"     element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Staff /></ProtectedRoute>} />
         <Route path="/admin/settings"  element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Settings /></ProtectedRoute>} />
-        <Route path="/admin/migrate"   element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Migrate /></ProtectedRoute>} />
+        {/* /admin/migrate redirected — migration is now inside /admin/products */}
+        <Route path="/admin/migrate"   element={<Navigate to="/admin/products" replace />} />
       </Routes>
     </BrowserRouter>
   )

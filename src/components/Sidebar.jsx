@@ -29,7 +29,6 @@ const NAV = {
         { label: 'Prices', path: '/admin/prices' },
         { label: 'Staff', path: '/admin/staff' },
         { label: 'Settings', path: '/admin/settings' },
-        { label: 'Migrate', path: '/admin/migrate' },
       ],
     },
   ],
