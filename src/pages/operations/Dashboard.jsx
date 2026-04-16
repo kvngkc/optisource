@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
-import { useAuth } from '../hooks/useAuth'
-import Layout from '../components/Layout'
+import { supabase } from '../../supabase'
+import { useAuth } from '../../hooks/useAuth'
+import Layout from '../../components/Layout'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend

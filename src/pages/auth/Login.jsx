@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../supabase'
+import { supabase } from '../../supabase'
 import { useNavigate, Link } from 'react-router-dom'
 
 export default function Login() {

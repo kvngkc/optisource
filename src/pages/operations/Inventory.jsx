@@ -1,8 +1,8 @@
 // src/pages/Inventory.jsx
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
-import { useAuth } from '../hooks/useAuth'
-import Layout from '../components/Layout'
+import { supabase } from '../../supabase'
+import { useAuth } from '../../hooks/useAuth'
+import Layout from '../../components/Layout'
 
 const SPH_VALUES = ['Plano', ...Array.from({ length: 80 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 80 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0'))]
 const CYL_VALUES = ['-', '+000', ...Array.from({ length: 16 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]

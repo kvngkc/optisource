@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { supabase } from '../supabase'
-import { useAuth } from '../hooks/useAuth'
-import Layout from '../components/Layout'
+import { supabase } from '../../supabase'
+import { useAuth } from '../../hooks/useAuth'
+import Layout from '../../components/Layout'
 
 export default function Export() {
   const { profile } = useAuth()
