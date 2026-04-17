@@ -345,7 +345,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
   const [selForm, setSelForm]           = useState({ class_id: '', product_id: '', sph: 'Plano', cyl: '-', axis: '-', addition: '-' })
   const [stockRows, setStockRows]       = useState([])   // sources with available + moveQty
   const [toRows, setToRows]             = useState([{ _id: Date.now(), location_id: '', qty: '' }])
-  const [step, setStep]                 = useState('select')  // select | review | done
+  const [searching, setSearching]       = useState(false)
   const [loading, setLoading]           = useState(false)
   const [msg, setMsg]                   = useState({ type: '', text: '' })
   const [summary, setSummary]           = useState(null)
@@ -382,30 +382,37 @@ function InventoryTransferTab({ profile, locations, classes }) {
     }
   }
 
-  async function findStock() {
+  // Auto-load stock whenever product or spec selection changes
+  useEffect(() => {
     if (!selForm.product_id) return
-    setLoading(true)
-    const specs = getSpecValues()
-    let q = supabase.from('stock')
-      .select('id, qty, location_id, locations(id, name, code)')
-      .eq('product_id', selForm.product_id)
-      .eq('company_id', profile.company_id)
-      .gt('qty', 0)
-    q = buildStockQuery(q, specs)
-    const { data, error } = await q
-    if (error) { flash('error', error.message); setLoading(false); return }
-    setStockRows((data || []).map(s => ({
-      stock_id:      s.id,
-      location_id:   s.location_id,
-      location_code: s.locations?.code,
-      location_name: s.locations?.name,
-      available:     s.qty,
-      moveQty:       '',
-    })))
-    setToRows([{ _id: Date.now(), location_id: '', qty: '' }])
-    setStep('review')
-    setLoading(false)
-  }
+    let cancelled = false
+    async function loadStock() {
+      setSearching(true)
+      // Reset move quantities when selection changes
+      setStockRows(r => r.map(s => ({ ...s, moveQty: '' })))
+      const specs = getSpecValues()
+      let q = supabase.from('stock')
+        .select('id, qty, location_id, locations(id, name, code)')
+        .eq('product_id', selForm.product_id)
+        .eq('company_id', profile.company_id)
+        .gt('qty', 0)
+      q = buildStockQuery(q, specs)
+      const { data, error } = await q
+      if (cancelled) return
+      if (error) { flash('error', error.message); setSearching(false); return }
+      setStockRows((data || []).map(s => ({
+        stock_id:      s.id,
+        location_id:   s.location_id,
+        location_code: s.locations?.code,
+        location_name: s.locations?.name,
+        available:     s.qty,
+        moveQty:       '',
+      })))
+      setSearching(false)
+    }
+    loadStock()
+    return () => { cancelled = true }
+  }, [selForm.product_id, selForm.sph, selForm.cyl, selForm.axis, selForm.addition])
 
   // totals
   const totalFrom = stockRows.reduce((sum, s) => sum + (parseInt(s.moveQty, 10) || 0), 0)
@@ -521,7 +528,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
   }
 
   function reset() {
-    setStep('select'); setStockRows([])
+    setStockRows(r => r.map(s => ({ ...s, moveQty: '' })))
     setToRows([{ _id: Date.now(), location_id: '', qty: '' }])
     setSummary(null); setMsg({ type: '', text: '' })
   }
@@ -571,21 +578,20 @@ function InventoryTransferTab({ profile, locations, classes }) {
 
       {/* ── Select product ── */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h3 className="font-semibold text-slate-700 text-sm mb-4">Select product to transfer</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-700 text-sm">Select product to transfer</h3>
+          {searching && <span className="text-xs text-slate-400 animate-pulse">Loading stock…</span>}
+        </div>
         <SpecSelector
           form={selForm} setForm={setSelForm}
           products={products} classes={classes}
           showLocation={false} locations={[]}
           compact
         />
-        <button onClick={findStock} disabled={loading || !selForm.product_id}
-          className="w-full mt-4 bg-slate-900 text-white py-3 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-40">
-          {loading ? 'Searching…' : 'Find stock across locations →'}
-        </button>
       </div>
 
-      {/* ── Transfer panel ── */}
-      {step === 'review' && (
+      {/* ── Transfer panel — always visible once product is selected ── */}
+      {selForm.product_id && (
         <>
           {/* FROM */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5">
