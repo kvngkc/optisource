@@ -28,7 +28,6 @@ export default function Settings() {
         })
       fetchBanks()
     }
-    }
   }, [profile])
 
   async function toggleOpticianAccess() {
