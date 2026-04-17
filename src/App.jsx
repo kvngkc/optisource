@@ -8,6 +8,7 @@ import StockQuery     from './pages/reports/StockQuery'
 import AuditLog       from './pages/reports/AuditLog'
 import Debtors        from './pages/operations/Debtors'
 import Export         from './pages/reports/Export'
+import QueryHistory   from './pages/reports/QueryHistory'
 import Locations      from './pages/admin/Locations'
 import Products       from './pages/admin/Products'
 import Prices         from './pages/admin/Prices'
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/debtors"   element={<ProtectedRoute allowedRoles={['company_admin','super_admin','staff']}><Debtors /></ProtectedRoute>} />
         <Route path="/query"     element={<ProtectedRoute><StockQuery /></ProtectedRoute>} />
         <Route path="/audit"     element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><AuditLog /></ProtectedRoute>} />
+        <Route path="/reports/query-history" element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><QueryHistory /></ProtectedRoute>} />
         <Route path="/export"    element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Export /></ProtectedRoute>} />
 
         <Route path="/admin/locations" element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Locations /></ProtectedRoute>} />
