@@ -419,6 +419,13 @@ function InventoryTransferTab({ profile, locations, classes }) {
   const totalTo   = toRows.reduce((sum, r)   => sum + (parseInt(r.qty,     10) || 0), 0)
   const balanced  = totalFrom > 0 && totalFrom === totalTo
 
+  // Auto-sync qty if there is only one destination
+  useEffect(() => {
+    if (toRows.length === 1 && parseInt(toRows[0].qty || 0, 10) !== totalFrom) {
+      setToRows(r => [{ ...r[0], qty: totalFrom ? String(totalFrom) : '' }])
+    }
+  }, [totalFrom, toRows.length])
+
   function updateMoveQty(location_id, val) {
     setStockRows(r => r.map(s => s.location_id === location_id ? { ...s, moveQty: val } : s))
   }
@@ -660,7 +667,12 @@ function InventoryTransferTab({ profile, locations, classes }) {
                   <input type="number" min="1"
                     value={r.qty} onChange={e => updateToRow(r._id, 'qty', e.target.value)}
                     placeholder="Qty"
-                    className="w-24 px-3 py-2.5 rounded-xl border border-slate-300 text-right text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-sm" />
+                    readOnly={toRows.length === 1}
+                    className={`w-24 px-3 py-2.5 rounded-xl border text-right text-sm focus:outline-none focus:ring-2 ${
+                      toRows.length === 1
+                        ? 'bg-slate-50 border-slate-200 text-slate-500 outline-none focus:ring-0'
+                        : 'bg-white border-slate-300 text-slate-900 focus:ring-slate-900'
+                    }`} />
                   {toRows.length > 1 && (
                     <button onClick={() => removeToRow(r._id)}
                       className="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0">✕</button>
