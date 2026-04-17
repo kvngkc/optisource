@@ -21,12 +21,16 @@ export default function Debtors() {
   async function fetchDebtors() {
     let query = supabase
       .from('debtors')
-      .select('*, transactions(products(name), locations(code), sph, addition, qty, created_at)')
+      .select('*, transactions!inner(products(name), locations(code), sph, addition, qty, created_at, location_id)')
       .eq('company_id', profile.company_id)
       .order('created_at', { ascending: false })
 
     if (filter === 'outstanding') query = query.eq('is_settled', false)
     if (filter === 'settled')     query = query.eq('is_settled', true)
+    
+    if (profile?.role === 'staff' && profile?.location_id) {
+      query = query.eq('transactions.location_id', profile.location_id)
+    }
 
     const { data } = await query
     setDebtors(data || [])

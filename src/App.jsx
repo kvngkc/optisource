@@ -23,8 +23,8 @@ export default function App() {
         <Route path="/login"    element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/inventory" element={<ProtectedRoute allowedRoles={['company_admin','super_admin','staff']}><Inventory /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Dashboard /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute allowedRoles={['company_admin','super_admin']}><Inventory /></ProtectedRoute>} />
         <Route path="/sales"     element={<ProtectedRoute allowedRoles={['company_admin','super_admin','staff']}><Sales /></ProtectedRoute>} />
         <Route path="/debtors"   element={<ProtectedRoute allowedRoles={['company_admin','super_admin','staff']}><Debtors /></ProtectedRoute>} />
         <Route path="/query"     element={<ProtectedRoute><StockQuery /></ProtectedRoute>} />

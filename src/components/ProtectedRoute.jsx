@@ -23,6 +23,11 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/query" replace />
   }
 
+  // Staff are restricted to their location's sales out of the gate
+  if (profile?.role === 'staff' && location.pathname === '/dashboard') {
+    return <Navigate to="/sales" replace />
+  }
+
   if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
     return <Navigate to="/dashboard" replace />
   }

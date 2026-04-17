@@ -66,8 +66,6 @@ const NAV = {
     {
       group: 'Operations',
       links: [
-        { label: 'Dashboard', path: '/dashboard' },
-        { label: 'Inventory', path: '/inventory' },
         { label: 'Sales', path: '/sales' },
         { label: 'Debtors', path: '/debtors' },
       ],

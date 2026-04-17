@@ -67,19 +67,25 @@ export default function Sales() {
     setForm(f => ({ ...f, product_id: data?.[0]?.id || '' }))
   }
   async function fetchLocations() {
-    const { data } = await supabase.from('locations').select('*').eq('company_id', profile.company_id).order('name')
+    let q = supabase.from('locations').select('*').eq('company_id', profile.company_id).order('name')
+    if (profile?.role === 'staff' && profile?.location_id) q = q.eq('id', profile.location_id)
+    const { data } = await q
     setLocations(data || [])
     if (profile?.location_id) setForm(f => ({ ...f, location_id: profile.location_id }))
     else if (data?.length)    setForm(f => ({ ...f, location_id: data[0].id }))
   }
   async function fetchRecentSales() {
-    const { data } = await supabase
+    let q = supabase
       .from('transactions')
       .select('*, products(name), locations(name, code)')
       .eq('company_id', profile.company_id)
       .eq('type', 'SALE')
-      .order('created_at', { ascending: false })
-      .limit(10)
+    
+    if (profile?.role === 'staff' && profile?.location_id) {
+      q = q.eq('location_id', profile.location_id)
+    }
+    
+    const { data } = await q.order('created_at', { ascending: false }).limit(10)
     setRecentSales(data || [])
   }
 
