@@ -115,6 +115,7 @@ export default function Register() {
       .upsert({
         id:         userId,
         full_name:  form.fullName.trim(),
+        email:      form.email.trim(),
         role:       'company_admin',
         company_id: company.id,
       })
@@ -160,6 +161,7 @@ export default function Register() {
       .upsert({
         id:          userId,
         full_name:   form.fullName.trim(),
+        email:       form.email.trim(),
         role:        'staff',
         company_id:  company.id,
         location_id: null,
@@ -191,6 +193,7 @@ export default function Register() {
       .upsert({
         id:        userId,
         full_name: form.fullName.trim(),
+        email:     form.email.trim(),
         role:      'optician',
       })
     if (profileErr) throw profileErr

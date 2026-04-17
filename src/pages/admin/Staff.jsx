@@ -26,7 +26,7 @@ export default function Staff() {
     const [staffRes, locRes] = await Promise.all([
       supabase
         .from('profiles')
-        .select('id, full_name, role, location_id, locations(name)')
+        .select('id, full_name, email, role, location_id, locations(name)')
         .eq('company_id', profile.company_id)
         .neq('id', profile.id)
         .order('full_name'),
@@ -201,7 +201,11 @@ function StaffRow({ member, locations, saving, onAssignLocation, onChangeRole, o
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-0.5 capitalize">{member.role?.replace('_', ' ')}</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            <span className="capitalize">{member.role?.replace('_', ' ')}</span>
+            {member.email && <span className="mx-1.5 text-slate-300">·</span>}
+            {member.email && <span>{member.email}</span>}
+          </p>
         </div>
 
         <button
