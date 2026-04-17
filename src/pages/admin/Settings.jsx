@@ -27,12 +27,16 @@ export default function Settings() {
   async function toggleOpticianAccess() {
     setSaving(true)
     const newVal = !opticianAccess
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('companies')
       .update({ optician_access: newVal })
       .eq('id', profile.company_id)
+      .select()
+      
     if (error) {
       setMsg({ type: 'error', text: error.message })
+    } else if (!data || data.length === 0) {
+      setMsg({ type: 'error', text: 'Failed to save: You do not have permission to update this company settings.' })
     } else {
       setOpticianAccess(newVal)
       setMsg({
