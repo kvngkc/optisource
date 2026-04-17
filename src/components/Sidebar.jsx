@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useOrderBadge } from '../hooks/useOrderBadge'
 
 const NAV = {
   company_admin: [
@@ -11,6 +12,7 @@ const NAV = {
         { label: 'Inventory', path: '/inventory' },
         { label: 'Sales', path: '/sales' },
         { label: 'Debtors', path: '/debtors' },
+        { label: 'Orders', path: '/orders', badge: true },
       ],
     },
     {
@@ -41,6 +43,7 @@ const NAV = {
         { label: 'Inventory', path: '/inventory' },
         { label: 'Sales', path: '/sales' },
         { label: 'Debtors', path: '/debtors' },
+        { label: 'Orders', path: '/orders', badge: true },
       ],
     },
     {
@@ -84,6 +87,7 @@ const NAV = {
       group: 'Query',
       links: [
         { label: 'Stock query', path: '/query' },
+        { label: 'My orders', path: '/orders', badge: true },
       ],
     },
   ],
@@ -93,8 +97,8 @@ function allLinks(role) {
   return (NAV[role] || []).flatMap(g => g.links)
 }
 
-function NavGroup({ group, links, location, onClick }) {
-  const isActive = links.some(l => l.path === location.pathname)
+function NavGroup({ group, links, location, onClick, orderBadge }) {
+  const isActive = links.some(l => location.pathname === l.path || location.pathname.startsWith(l.path + '/'))
   const [open, setOpen] = useState(isActive)
 
   return (
@@ -120,12 +124,18 @@ function NavGroup({ group, links, location, onClick }) {
               key={link.path}
               to={link.path}
               onClick={onClick}
-              className={`block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${location.pathname === link.path
+              className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                location.pathname === link.path || location.pathname.startsWith(link.path + '/')
                   ? 'bg-white text-slate-900'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
+              }`}
             >
-              {link.label}
+              <span>{link.label}</span>
+              {link.badge && orderBadge > 0 && (
+                <span className="bg-amber-400 text-slate-900 text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center leading-tight">
+                  {orderBadge > 99 ? '99+' : orderBadge}
+                </span>
+              )}
             </Link>
           ))}
         </div>
@@ -138,6 +148,7 @@ export default function Sidebar() {
   const { profile, signOut } = useAuth()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const orderBadge = useOrderBadge(profile)
 
   const groups = NAV[profile?.role] || []
   const currentLabel = allLinks(profile?.role).find(l => l.path === location.pathname)?.label || 'Menu'
@@ -176,6 +187,7 @@ export default function Sidebar() {
                   links={g.links}
                   location={location}
                   onClick={() => setOpen(false)}
+                  orderBadge={orderBadge}
                 />
               ))}
             </nav>
@@ -203,6 +215,7 @@ export default function Sidebar() {
               links={g.links}
               location={location}
               onClick={null}
+              orderBadge={orderBadge}
             />
           ))}
         </nav>

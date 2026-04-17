@@ -10,6 +10,11 @@ export default function Settings() {
   const [saving,  setSaving]  = useState(false)
   const [msg,     setMsg]     = useState({ type: '', text: '' })
 
+  // ── Bank accounts ──
+  const [banks, setBanks]           = useState([])
+  const [bankForm, setBankForm]     = useState({ bank_name: '', account_number: '', account_name: '' })
+  const [savingBank, setSavingBank] = useState(false)
+
   useEffect(() => {
     if (profile?.company_id) {
       supabase
@@ -21,6 +26,8 @@ export default function Settings() {
           setOpticianAccess(data?.optician_access || false)
           setLoading(false)
         })
+      fetchBanks()
+    }
     }
   }, [profile])
 
@@ -54,6 +61,40 @@ export default function Settings() {
     await navigator.clipboard.writeText(profile?.companies?.slug || '')
     setMsg({ type: 'success', text: 'Company code copied to clipboard.' })
     setTimeout(() => setMsg({ type: '', text: '' }), 2000)
+  }
+
+  async function fetchBanks() {
+    const { data } = await supabase.from('company_bank_accounts')
+      .select('*').eq('company_id', profile.company_id).order('is_primary', { ascending: false })
+    setBanks(data || [])
+  }
+
+  async function addBank(e) {
+    e.preventDefault()
+    if (!bankForm.bank_name || !bankForm.account_number || !bankForm.account_name) return
+    setSavingBank(true)
+    const isPrimary = banks.length === 0
+    await supabase.from('company_bank_accounts').insert({
+      company_id:     profile.company_id,
+      bank_name:      bankForm.bank_name.trim(),
+      account_number: bankForm.account_number.trim(),
+      account_name:   bankForm.account_name.trim(),
+      is_primary:     isPrimary,
+    })
+    setBankForm({ bank_name: '', account_number: '', account_name: '' })
+    await fetchBanks()
+    setSavingBank(false)
+  }
+
+  async function removeBank(id) {
+    await supabase.from('company_bank_accounts').delete().eq('id', id)
+    fetchBanks()
+  }
+
+  async function setPrimary(id) {
+    await supabase.from('company_bank_accounts').update({ is_primary: false }).eq('company_id', profile.company_id)
+    await supabase.from('company_bank_accounts').update({ is_primary: true }).eq('id', id)
+    fetchBanks()
   }
 
   if (loading) {
@@ -125,6 +166,51 @@ export default function Settings() {
               ? '● Enabled — registered opticians can query your availability'
               : '○ Disabled — your stock is private to your team'}
           </p>
+        </div>
+
+        {/* ── Bank accounts ── */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 mt-4">
+          <h2 className="text-sm font-semibold text-slate-900 mb-1">Bank accounts</h2>
+          <p className="text-xs text-slate-500 mb-4">Opticians will see these when their order is confirmed so they can make payment.</p>
+
+          {/* Existing accounts */}
+          {banks.length > 0 && (
+            <div className="space-y-2 mb-5">
+              {banks.map(b => (
+                <div key={b.id} className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800">{b.account_number}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{b.account_name} · {b.bank_name}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {b.is_primary
+                      ? <span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">Primary</span>
+                      : <button onClick={() => setPrimary(b.id)} className="text-xs text-slate-400 hover:text-slate-700">Set primary</button>}
+                    <button onClick={() => removeBank(b.id)} className="text-xs text-red-400 hover:text-red-600">Remove</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add account form */}
+          <form onSubmit={addBank} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input type="text" placeholder="Bank name (e.g. GTBank)" value={bankForm.bank_name}
+                onChange={e => setBankForm(f => ({ ...f, bank_name: e.target.value }))}
+                className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              <input type="text" placeholder="Account number" value={bankForm.account_number}
+                onChange={e => setBankForm(f => ({ ...f, account_number: e.target.value }))}
+                className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+              <input type="text" placeholder="Account name" value={bankForm.account_name}
+                onChange={e => setBankForm(f => ({ ...f, account_name: e.target.value }))}
+                className="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+            </div>
+            <button type="submit" disabled={savingBank}
+              className="text-sm font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors px-4 py-2.5 rounded-xl disabled:opacity-50">
+              {savingBank ? 'Adding…' : '+ Add bank account'}
+            </button>
+          </form>
         </div>
       </div>
     </Layout>
