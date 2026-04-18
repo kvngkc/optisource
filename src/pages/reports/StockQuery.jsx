@@ -4,17 +4,7 @@ import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
 
-// ── Spec values ──────────────────────────────────────────────
-const SPH_VALUES = ['Plano',
-  ...Array.from({ length: 80 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
-  ...Array.from({ length: 80 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')),
-]
-const CYL_VALUES = ['+000',
-  ...Array.from({ length: 16 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')),
-  ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
-]
-const AXIS_VALUES = ['90', '180']
-const ADD_VALUES = Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))
+import { SPH_VALUES, CYL_VALUES, AXIS_VALUES, ADD_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
 
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
   let q = base
@@ -160,15 +150,17 @@ function StaffQuery({ profile }) {
             </select></div>
           {!isUtility && selectedProduct && (
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">SPH</label>
-                <select value={form.sph} onChange={e => update('sph', e.target.value)} className={sc}>{SPH_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">{specType.startsWith('base_') ? 'Base' : 'SPH'}</label>
+                <select value={specType.startsWith('base_') ? form.sph.replace('+', '') : form.sph} onChange={e => update('sph', specType.startsWith('base_') ? dbFormatBase(e.target.value) : e.target.value)} className={sc}>
+                  {(specType.startsWith('base_') ? BASE_VALUES : SPH_VALUES).map(v => <option key={v}>{v}</option>)}
+                </select></div>
               {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">CYL</label>
                   <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>{CYL_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
               {specType === 'sph_cyl_axis_add' && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Axis</label>
                   <select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>{AXIS_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
-              {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (
+              {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
                   <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
             </div>)}
@@ -225,6 +217,7 @@ function OpticianQuery({ profile }) {
   const [showCart, setShowCart] = useState(false)
   const [placing, setPlacing]   = useState(false)
   const [orderDone, setOrderDone] = useState(null) // order id after success
+  const [toast, setToast]       = useState('')
 
   const selectedProduct = products.find(p => p.id === form.product_id)
   const specType  = selectedProduct?.spec_type || 'sph_add'
@@ -324,8 +317,19 @@ function OpticianQuery({ profile }) {
     if (specs.axis     !== null) q = q.eq('axis', specs.axis)         ; else q = q.is('axis', null)
     if (specs.addition !== null) q = q.eq('addition', specs.addition) ; else q = q.is('addition', null)
     if (specs.name_key !== null) q = q.eq('name_key', specs.name_key) ; else q = q.is('name_key', null)
-    const { data: priceRow } = await q.maybeSingle()
-    if (priceRow) unitPrice = priceRow.price
+    
+    // First try exact spec matches
+    const { data: exactPriceRow } = await q.maybeSingle()
+    if (exactPriceRow) {
+      unitPrice = exactPriceRow.price
+    } else {
+      // If exact spec not found, try base (null) price for this product
+      const { data: basePriceRow } = await supabase.from('product_prices').select('price')
+        .eq('product_id', form.product_id).eq('company_id', supplier.id)
+        .is('sph', null).is('cyl', null).is('axis', null).is('addition', null).is('name_key', null)
+        .maybeSingle()
+      if (basePriceRow) unitPrice = basePriceRow.price
+    }
 
     // Check if same item already in cart and bump qty
     const key = `${form.product_id}||${JSON.stringify(specs)}`
@@ -339,6 +343,9 @@ function OpticianQuery({ profile }) {
         unit_price: unitPrice, subtotal: unitPrice != null ? Number(addQty) * unitPrice : null,
       }])
     }
+    
+    setToast('Added to cart')
+    setTimeout(() => setToast(''), 3000)
   }
 
   function removeFromCart(key) { setCart(prev => prev.filter(c => c.key !== key)) }
@@ -506,6 +513,15 @@ function OpticianQuery({ profile }) {
         </div>
       </div>
 
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-slate-700 text-white px-5 py-3 rounded-full text-sm font-semibold shadow-2xl animate-fade-in pointer-events-none flex items-center gap-2">
+          <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {toast}
+        </div>
+      )}
+
       {/* Search form */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-6">
         <form onSubmit={handleSearch} className="space-y-4">
@@ -519,10 +535,13 @@ function OpticianQuery({ profile }) {
             </select></div>
           {!isUtility && selectedProduct && (
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">SPH</label><select value={form.sph} onChange={e => update('sph', e.target.value)} className={sc}>{SPH_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">{specType.startsWith('base_') ? 'Base' : 'SPH'}</label>
+                <select value={specType.startsWith('base_') ? form.sph.replace('+', '') : form.sph} onChange={e => update('sph', specType.startsWith('base_') ? dbFormatBase(e.target.value) : e.target.value)} className={sc}>
+                  {(specType.startsWith('base_') ? BASE_VALUES : SPH_VALUES).map(v => <option key={v}>{v}</option>)}
+                </select></div>
               {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">CYL</label><select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>{CYL_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
               {specType === 'sph_cyl_axis_add' && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Axis</label><select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>{AXIS_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
-              {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label><select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+              {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label><select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
             </div>)}
           <button type="submit" disabled={loading || !form.product_id}
             className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-40">

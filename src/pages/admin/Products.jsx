@@ -9,6 +9,8 @@ const SPEC_LABELS = {
   sph_cyl:          'SPH + CYL',
   sph_cyl_axis_add: 'SPH + CYL + AXIS + ADD',
   name_only:        'Name only',
+  base_add:         'Base + ADD',
+  base_only:        'Base only',
 }
 
 // ── Spec dropdown values ──────────────────────────────────────
@@ -23,6 +25,9 @@ const CYL_VALUES = ['-', '+000',
 const AXIS_VALUES = ['-', '90', '180']
 const ADD_VALUES  = ['-',
   ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
+]
+const BASE_VALUES = ['Plano',
+  ...Array.from({ length: 12 }, (_, i) => String((i + 1) * 100))
 ]
 
 // ── Import templates (6 types across 4 groups) ────────────────
@@ -67,7 +72,7 @@ const TEMPLATE_GROUPS = [
         id: 'semi_base_add',
         label: 'Blank (Base + ADD)',
         desc: 'e.g. Bifocal blank, Progressive blank 1.56',
-        spec_type: 'sph_add',
+        spec_type: 'base_add',
         sphKey: 'base', sphLabel: 'Base',
         hasSph: true, hasCyl: false, hasAxis: false, hasAdd: true, isUtility: false,
         csvCols: ['product_name', 'location_code', 'base', 'addition', 'qty'],
@@ -81,7 +86,7 @@ const TEMPLATE_GROUPS = [
         id: 'semi_base_only',
         label: 'Blank (Base only)',
         desc: 'e.g. Single vision blank 1.50, CR39 blank',
-        spec_type: 'sph_cyl',
+        spec_type: 'base_only',
         sphKey: 'base', sphLabel: 'Base',
         hasSph: true, hasCyl: false, hasAxis: false, hasAdd: false, isUtility: false,
         csvCols: ['product_name', 'location_code', 'base', 'qty'],

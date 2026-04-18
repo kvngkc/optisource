@@ -49,9 +49,13 @@ export default function AuditLog() {
   function loadMore() { fetchLogs(page + 1) }
 
   const FILTERS = [
-    { value: 'all',           label: 'All' },
-    { value: 'INVENTORY_ADD', label: 'Inventory adds' },
-    { value: 'SALE',          label: 'Sales' },
+    { value: 'all',              label: 'All' },
+    { value: 'INVENTORY_ADD',    label: 'Inventory adds' },
+    { value: 'SALE',             label: 'Sales' },
+    { value: 'SALE_VOID',        label: 'Voids' },
+    { value: 'TRANSFER',         label: 'Transfers' },
+    { value: 'MIGRATION_IMPORT', label: 'Imports' },
+    { value: 'LOGIN',            label: 'Logins' },
   ]
 
   return (

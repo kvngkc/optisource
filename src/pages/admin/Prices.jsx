@@ -3,9 +3,7 @@ import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
 
-const SPH_VALUES = ['Plano', ...Array.from({ length: 80 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 80 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0'))]
-const CYL_VALUES = ['-', '+000', ...Array.from({ length: 16 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]
-const ADD_VALUES  = ['-', ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]
+import { SPH_VALUES, CYL_VALUES, ADD_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
 
 export default function Prices() {
   const { profile } = useAuth()
@@ -14,7 +12,7 @@ export default function Prices() {
   const [prices, setPrices]     = useState([])
   const [form, setForm] = useState({
     class_id: '', product_id: '',
-    sph: 'Plano', cyl: '-', addition: '-',
+    sph: 'All', cyl: 'All', addition: 'All',
     price: '',
   })
   const [loading, setLoading]   = useState(false)
@@ -54,19 +52,23 @@ export default function Prices() {
   const selectedProduct = products.find(p => p.id === form.product_id)
   const specType  = selectedProduct?.spec_type || 'sph_add'
   const isUtility = specType === 'name_only'
+  const usesBase  = specType.startsWith('base_')
 
   async function savePrice(e) {
     e.preventDefault()
     if (!form.product_id || !form.price) { flash('error', 'Product and price required'); return }
     setLoading(true)
 
+    // "All" equates to null in DB (base price fallback)
+    const getVal = (v, isBase) => v === 'All' ? null : (isBase ? dbFormatBase(v) : v)
+
     const payload = {
       company_id: profile.company_id,
       product_id: form.product_id,
-      sph:      isUtility ? null : form.sph,
-      cyl:      isUtility ? null : (specType === 'sph_add' ? null : form.cyl),
+      sph:      isUtility ? null : getVal(form.sph, usesBase),
+      cyl:      isUtility ? null : (specType === 'sph_add' || specType === 'base_add' ? null : getVal(form.cyl, false)),
       axis:     null,
-      addition: isUtility ? null : (specType === 'sph_cyl' ? null : form.addition),
+      addition: isUtility ? null : (specType === 'sph_cyl' || specType === 'base_only' ? null : getVal(form.addition, false)),
       name_key: isUtility ? selectedProduct?.name : null,
       price:    Number(form.price),
     }
@@ -117,23 +119,26 @@ export default function Prices() {
             {!isUtility && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">SPH</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{usesBase ? 'Base' : 'SPH'}</label>
                   <select value={form.sph} onChange={e => update('sph', e.target.value)} className={sc}>
-                    {SPH_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                    <option value="All">All specs (Base price)</option>
+                    {(usesBase ? BASE_VALUES : SPH_VALUES).map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
                 {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">CYL</label>
                     <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>
+                      <option value="All">All CYL</option>
                       {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
                 )}
-                {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (
+                {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
                     <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>
+                      <option value="All">All Additions</option>
                       {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>

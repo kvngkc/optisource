@@ -25,10 +25,12 @@ export default function Dashboard() {
   const [lowStock, setLowStock]         = useState([])
   const [loading, setLoading]           = useState(true)
   const [period, setPeriod]             = useState('30')
+  const [locations, setLocations]       = useState([])
+  const [locationFilter, setLocationFilter] = useState('all')
 
   useEffect(() => {
     if (profile?.company_id) loadAll()
-  }, [profile, period])
+  }, [profile, period, locationFilter])
 
   async function loadAll() {
     setLoading(true)
@@ -37,8 +39,14 @@ export default function Dashboard() {
       loadRevenueChart(),
       loadTopProducts(),
       loadLowStock(),
+      fetchLocations(),
     ])
     setLoading(false)
+  }
+
+  async function fetchLocations() {
+    const { data } = await supabase.from('locations').select('id, name, code').eq('company_id', profile.company_id)
+    setLocations(data || [])
   }
 
   async function loadTodayStats() {
@@ -118,14 +126,18 @@ export default function Dashboard() {
   }
 
   async function loadLowStock() {
-    const { data } = await supabase
+    let query = supabase
       .from('stock')
       .select('qty, sph, addition, name_key, products(name), locations(name, code)')
       .eq('company_id', profile.company_id)
       .gt('qty', 0)
       .lte('qty', 5)
-      .order('qty')
-      .limit(20)
+      
+    if (locationFilter !== 'all') {
+      query = query.eq('location_id', locationFilter)
+    }
+
+    const { data } = await query.order('qty').limit(20)
 
     setLowStock(data || [])
   }
@@ -225,10 +237,18 @@ export default function Dashboard() {
           </div>
 
           {/* Low stock */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5">
-            <p className="font-semibold text-slate-700 mb-4 text-sm">
-              Low stock <span className="text-amber-500">({lowStock.length})</span>
-            </p>
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col max-h-[400px]">
+            <div className="flex items-center justify-between mb-4">
+              <p className="font-semibold text-slate-700 text-sm">
+                Low stock <span className="text-amber-500">({lowStock.length})</span>
+              </p>
+              <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none bg-white max-w-[120px]">
+                <option value="all">All locs</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.code}</option>)}
+              </select>
+            </div>
+            
             {lowStock.length === 0 ? (
               <p className="text-slate-300 text-sm text-center py-6">All products well stocked</p>
             ) : (

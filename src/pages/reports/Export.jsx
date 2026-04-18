@@ -99,6 +99,29 @@ export default function Export() {
     setLoading('')
   }
 
+  async function exportQueries() {
+    setLoading('queries')
+    const { from, to } = getDateRange()
+    const { data } = await supabase
+      .from('optician_query_log')
+      .select('created_at, optician_name, product_name, spec_details, result')
+      .eq('company_id', profile.company_id)
+      .gte('created_at', from)
+      .lte('created_at', to)
+      .order('created_at', { ascending: false })
+
+    const headers = ['Date','Optician','Product','SPH','CYL','Axis','Addition','Result']
+    const rows = (data || []).map(q => [
+      new Date(q.created_at).toLocaleString(),
+      q.optician_name, q.product_name,
+      q.spec_details?.sph || '', q.spec_details?.cyl || '',
+      q.spec_details?.axis || '', q.spec_details?.addition || q.spec_details?.name_key || '',
+      q.result === 'in_stock' ? 'In Stock' : 'Out of Stock'
+    ])
+    downloadCSV(`optisource_queries_${Date.now()}.csv`, toCSV(headers, rows))
+    setLoading('')
+  }
+
   async function exportDebtors() {
     setLoading('debtors')
     const { data } = await supabase
@@ -125,6 +148,7 @@ export default function Export() {
     { key: 'sales',     label: 'Sales',         desc: 'All sales transactions with payment details', fn: exportSales,     color: 'bg-purple-50 border-purple-200' },
     { key: 'inventory', label: 'Inventory adds', desc: 'All stock additions by product and location',  fn: exportInventory, color: 'bg-blue-50 border-blue-200' },
     { key: 'audit',     label: 'Audit log',      desc: 'Complete action history with users',            fn: exportAuditLog,  color: 'bg-slate-50 border-slate-200' },
+    { key: 'queries',   label: 'Optician queries',desc: 'Log of stock lookups by external opticians',   fn: exportQueries,   color: 'bg-emerald-50 border-emerald-200' },
     { key: 'debtors',   label: 'Debtors',        desc: 'Outstanding and settled balances',             fn: exportDebtors,   color: 'bg-amber-50 border-amber-200' },
   ]
 

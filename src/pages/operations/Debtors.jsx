@@ -126,7 +126,9 @@ export default function Debtors() {
                 className={`w-full text-left bg-white rounded-xl border px-4 py-4 transition-all ${selected?.id === d.id ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'}`}>
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-semibold text-slate-800 text-sm">{d.customer_name}</p>
+                    <p className="font-semibold text-slate-800 text-sm">
+                      {d.customer_name} {d.customer_phone && <span className="text-slate-400 font-normal">({d.customer_phone})</span>}
+                    </p>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {d.transactions?.products?.name} · {d.transactions?.locations?.code}
                     </p>

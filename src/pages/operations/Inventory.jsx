@@ -3,19 +3,7 @@ import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
 
-// ── Spec dropdown values ──────────────────────────────────────
-const SPH_VALUES = ['Plano',
-  ...Array.from({ length: 80 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
-  ...Array.from({ length: 80 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')),
-]
-const CYL_VALUES = ['-', '+000',
-  ...Array.from({ length: 16 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')),
-  ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
-]
-const AXIS_VALUES = ['-', '90', '180']
-const ADD_VALUES  = ['-',
-  ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
-]
+import { SPH_VALUES, CYL_VALUES, ADD_VALUES, AXIS_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
 
 // ── Null-safe stock query builder ─────────────────────────────
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
@@ -36,8 +24,14 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
   const selectedProduct = products.find(p => p.id === form.product_id)
   const specType  = selectedProduct?.spec_type || 'sph_add'
   const isUtility = specType === 'name_only'
+  const usesBase  = specType.startsWith('base_')
 
   const gs = compact ? 'w-full px-3 py-2.5 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-sm' : SC
+  
+  function updateVal(key, val) {
+    if (key === 'sph' && usesBase) val = dbFormatBase(val)
+    setForm(f => ({ ...f, [key]: val }))
+  }
 
   return (
     <div className="space-y-3">
@@ -68,15 +62,15 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
       {!isUtility && (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>SPH</label>
-            <select value={form.sph} onChange={e => setForm(f => ({ ...f, sph: e.target.value }))} className={gs}>
-              {SPH_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+            <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>{usesBase ? 'Base' : 'SPH'}</label>
+            <select value={usesBase ? form.sph.replace('+', '') : form.sph} onChange={e => updateVal('sph', e.target.value)} className={gs}>
+              {(usesBase ? BASE_VALUES : SPH_VALUES).map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
           {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (
             <div>
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>CYL</label>
-              <select value={form.cyl} onChange={e => setForm(f => ({ ...f, cyl: e.target.value }))} className={gs}>
+              <select value={form.cyl} onChange={e => updateVal('cyl', e.target.value)} className={gs}>
                 {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
@@ -84,15 +78,15 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
           {specType === 'sph_cyl_axis_add' && (
             <div>
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Axis</label>
-              <select value={form.axis} onChange={e => setForm(f => ({ ...f, axis: e.target.value }))} className={gs}>
+              <select value={form.axis} onChange={e => updateVal('axis', e.target.value)} className={gs}>
                 {AXIS_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
-          {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (
+          {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (
             <div>
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Addition</label>
-              <select value={form.addition} onChange={e => setForm(f => ({ ...f, addition: e.target.value }))} className={gs}>
+              <select value={form.addition} onChange={e => updateVal('addition', e.target.value)} className={gs}>
                 {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>

@@ -40,9 +40,22 @@ export default function OrderDetail() {
   const [banks, setBanks]       = useState([])
   const [loading, setLoading]   = useState(true)
   const [msgText, setMsgText]   = useState('')
+  const [imageFile, setImageFile] = useState(null)
   const [sending, setSending]   = useState(false)
   const [actioning, setActioning] = useState(false)
+  const [locations, setLocations] = useState([])
+  const [dispatchLoc, setDispatchLoc] = useState('')
   const bottomRef = useRef(null)
+
+  function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
+    let q = base
+    sph      === null ? q = q.is('sph', null)      : q = q.eq('sph', sph)
+    cyl      === null ? q = q.is('cyl', null)      : q = q.eq('cyl', cyl)
+    axis     === null ? q = q.is('axis', null)     : q = q.eq('axis', axis)
+    addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition)
+    name_key === null ? q = q.is('name_key', null) : q = q.eq('name_key', name_key)
+    return q
+  }
 
   useEffect(() => {
     if (!profile || !id) return
@@ -74,21 +87,42 @@ export default function OrderDetail() {
         .order('is_primary', { ascending: false })
       setBanks(bankData || [])
     }
+    
+    // Fetch locations for dispatch if admin
+    if (isAdmin && profile?.company_id) {
+      const { data: locs } = await supabase.from('locations').select('*').eq('company_id', profile.company_id)
+      setLocations(locs || [])
+      if (locs?.length) setDispatchLoc(locs[0].id)
+    }
+
     setLoading(false)
   }
 
   async function sendMessage(e) {
-    e.preventDefault()
-    if (!msgText.trim()) return
+    if (e) e.preventDefault()
+    if (!msgText.trim() && !imageFile) return
     setSending(true)
+    
+    let imageUrl = null
+    if (imageFile) {
+      const ext = imageFile.name.split('.').pop()
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
+      const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, imageFile)
+      if (!error && data) {
+        const { data: pub } = supabase.storage.from('order-attachments').getPublicUrl(fileName)
+        imageUrl = pub.publicUrl
+      }
+    }
+
     await supabase.from('order_messages').insert({
       order_id:    id,
       sender_id:   profile.id,
       sender_name: profile.full_name,
       sender_role: profile.role,
-      message:     msgText.trim(),
+      message:     msgText.trim() || null,
+      image_url:   imageUrl,
     })
-    setMsgText('')
+    setMsgText(''); setImageFile(null)
     // Refresh messages
     const { data } = await supabase.from('order_messages').select('*').eq('order_id', id).order('created_at')
     setMessages(data || [])
@@ -96,8 +130,46 @@ export default function OrderDetail() {
   }
 
   async function updateStatus(newStatus) {
+    if (newStatus === 'dispatched' && !dispatchLoc) {
+       alert('Please select a dispatch location first.')
+       return
+    }
     if (!window.confirm(`Mark this order as ${newStatus}?`)) return
     setActioning(true)
+
+    // Handle fulfillment deduction
+    if (newStatus === 'dispatched') {
+      for (const item of items) {
+        // Log SALE transaction
+        await supabase.from('transactions').insert({
+          company_id: order.company_id,
+          type: 'SALE',
+          product_id: item.product_id,
+          location_id: dispatchLoc,
+          qty: item.qty,
+          unit_price: item.unit_price,
+          total_amount: item.subtotal,
+          customer_name: order.optician_name,
+          created_by: profile.id,
+          ...item.spec_details
+        })
+
+        // Deduct from stock
+        let base = supabase.from('stock').select('id, qty').eq('product_id', item.product_id).eq('location_id', dispatchLoc)
+        const { data: stockRow } = await buildStockQuery(base, item.spec_details).maybeSingle()
+        if (stockRow) {
+          await supabase.from('stock').update({ qty: stockRow.qty - item.qty }).eq('id', stockRow.id)
+        }
+      }
+      
+      // Log audit
+      await supabase.from('audit_log').insert({
+        company_id: profile.company_id, user_id: profile.id,
+        status: 'SUCCESS', action: 'SALE',
+        details: { action: 'Order Dispatched', order_id: id, items: items.length }
+      })
+    }
+
     await supabase.from('optician_orders')
       .update({ status: newStatus, updated_at: new Date() })
       .eq('id', id)
@@ -244,10 +316,16 @@ export default function OrderDetail() {
                 </>
               )}
               {order.status === 'confirmed' && (
-                <button onClick={() => updateStatus('dispatched')} disabled={actioning}
-                  className="px-4 py-2 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50">
-                  🚚 Mark dispatched
-                </button>
+                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <select value={dispatchLoc} onChange={e => setDispatchLoc(e.target.value)} disabled={actioning}
+                    className="bg-transparent text-sm font-medium text-slate-700 px-2 focus:outline-none min-w-[120px]">
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
+                  </select>
+                  <button onClick={() => updateStatus('dispatched')} disabled={actioning || !dispatchLoc}
+                    className="px-4 py-1.5 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50">
+                    🚚 Mark dispatched
+                  </button>
+                </div>
               )}
               {order.status === 'dispatched' && (
                 <button onClick={() => updateStatus('delivered')} disabled={actioning}
@@ -286,7 +364,12 @@ export default function OrderDetail() {
                     {!isMe && (
                       <p className="text-xs font-semibold mb-1 opacity-60">{msg.sender_name}</p>
                     )}
-                    <p className="text-sm leading-relaxed">{msg.message}</p>
+                    {msg.image_url && (
+                      <a href={msg.image_url} target="_blank" rel="noreferrer">
+                        <img src={msg.image_url} alt="Attachment" className="max-w-full h-auto rounded-xl mb-2 max-h-48 object-cover border border-slate-200" />
+                      </a>
+                    )}
+                    {msg.message && <p className="text-sm leading-relaxed">{msg.message}</p>}
                     <p className={`text-xs mt-1 ${isMe ? 'text-slate-400' : 'text-slate-400'}`}>
                       {timeStr(msg.created_at)}
                     </p>
@@ -298,8 +381,18 @@ export default function OrderDetail() {
           </div>
 
           {/* Message input */}
-          <div className="px-5 py-4 border-t border-slate-100">
-            <form onSubmit={sendMessage} className="flex gap-2">
+          <div className="px-5 py-4 border-t border-slate-100 flex flex-col gap-2">
+            {imageFile && (
+              <div className="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-xl text-sm border border-slate-200 w-fit">
+                <span className="text-slate-600 truncate max-wxs">📎 {imageFile.name}</span>
+                <button onClick={() => setImageFile(null)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
+              </div>
+            )}
+            <form onSubmit={sendMessage} className="flex gap-2 items-center">
+              <label className="cursor-pointer p-3 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors shrink-0 flex items-center justify-center">
+                <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                <input type="file" className="hidden" accept="image/*" onChange={e => setImageFile(e.target.files[0])} />
+              </label>
               <input
                 type="text"
                 value={msgText}
@@ -311,8 +404,8 @@ export default function OrderDetail() {
                 }
                 className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-sm"
               />
-              <button type="submit" disabled={sending || !msgText.trim()}
-                className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50">
+              <button type="submit" disabled={sending || (!msgText.trim() && !imageFile)}
+                className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50 h-full flex items-center">
                 {sending ? '…' : 'Send'}
               </button>
             </form>

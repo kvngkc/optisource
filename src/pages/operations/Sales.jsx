@@ -45,7 +45,7 @@ export default function Sales() {
     class_id: '', product_id: '', location_id: '',
     sph: 'Plano', cyl: '-', axis: '-', addition: '-',
     qty: '', unit_price: '', amount_paid: '', payment_method: 'Cash',
-    customer_name: '', notes: '',
+    customer_name: '', customer_phone: '', notes: '',
   })
 
   useEffect(() => {
@@ -158,6 +158,24 @@ export default function Sales() {
       setAvailableStock(stockRow?.qty ?? 0); setLoading(false); return
     }
     await supabase.from('stock').update({ qty: stockRow.qty - qty, updated_at: new Date() }).eq('id', stockRow.id)
+    let customerId = null
+    if (form.customer_name || form.customer_phone) {
+      const { data: existingCust } = await supabase.from('customers').select('id')
+        .eq('company_id', profile.company_id)
+        .eq('name', form.customer_name || 'Unknown')
+        .eq('phone', form.customer_phone || '')
+        .maybeSingle()
+        
+      if (existingCust) customerId = existingCust.id
+      else {
+        const { data: newCust, error: custErr } = await supabase.from('customers').insert({
+          company_id: profile.company_id, name: form.customer_name || 'Unknown', phone: form.customer_phone || ''
+        }).select('id').single()
+        if (newCust) customerId = newCust.id
+        if (custErr) console.error('Customer insert err:', custErr)
+      }
+    }
+
     await supabase.from('transactions').insert({
       company_id: profile.company_id, type: 'SALE',
       product_id: form.product_id, location_id: form.location_id,
@@ -167,7 +185,9 @@ export default function Sales() {
       amount_paid:    Number(form.amount_paid) || null,
       balance:        balance > 0 ? balance : null,
       payment_method: form.payment_method,
+      customer_id:    customerId,
       customer_name:  form.customer_name || null,
+      customer_phone: form.customer_phone || null,
       notes:          form.notes || null,
       created_by:     profile.id,
     })
@@ -177,7 +197,7 @@ export default function Sales() {
       details: { product: selectedProduct?.name, location: locations.find(l => l.id === form.location_id)?.code, ...specs, qty, total_amount: totalAmount },
     })
     flash('success', `Sale recorded — ${selectedProduct?.name} ×${qty}`)
-    setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', notes: '' }))
+    setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
     setAvailableStock(v => v !== null ? v - qty : null)
     fetchRecentSales()
     setLoading(false)
@@ -384,13 +404,23 @@ export default function Sales() {
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Customer name <span className="text-slate-400 font-normal">(optional)</span>
-              </label>
-              <input type="text" value={form.customer_name}
-                onChange={e => update('customer_name', e.target.value)} placeholder="e.g. John Doe"
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Customer name <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input type="text" value={form.customer_name}
+                  onChange={e => update('customer_name', e.target.value)} placeholder="e.g. John Doe"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Customer phone <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input type="text" value={form.customer_phone}
+                  onChange={e => update('customer_phone', e.target.value)} placeholder="e.g. 080..."
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
+              </div>
             </div>
 
             <div>
