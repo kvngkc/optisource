@@ -14,6 +14,7 @@ export default function Debtors() {
   const [loading, setLoading]     = useState(false)
   const [msg, setMsg]             = useState({ type: '', text: '' })
   const [filter, setFilter]       = useState('outstanding')
+  const [search, setSearch]       = useState('')
 
   useEffect(() => { if (profile?.company_id) fetchDebtors() }, [profile, filter])
   useEffect(() => { if (selected) fetchPayments(selected.id) }, [selected])
@@ -85,6 +86,12 @@ export default function Debtors() {
     setLoading(false)
   }
 
+  const q = search.trim().toLowerCase()
+  const filtered = debtors.filter(d =>
+    !q ||
+    (d.customer_name || '').toLowerCase().includes(q) ||
+    (d.customer_phone || '').toLowerCase().includes(q)
+  )
   const totalOutstanding = debtors.filter(d => !d.is_settled).reduce((s, d) => s + Number(d.balance), 0)
 
   return (
@@ -103,6 +110,16 @@ export default function Debtors() {
           )}
         </div>
 
+        {/* Search */}
+        <div className="relative mb-4">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or phone…"
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+        </div>
+
         {/* Filter tabs */}
         <div className="flex gap-2 mb-5">
           {[['outstanding','Outstanding'],['settled','Settled'],['all','All']].map(([v, l]) => (
@@ -116,12 +133,12 @@ export default function Debtors() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Debtor list */}
           <div className="space-y-2">
-            {debtors.length === 0 && (
+            {filtered.length === 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 text-sm">
-                {filter === 'outstanding' ? 'No outstanding balances.' : 'No records found.'}
+                {search ? 'No debtors match your search.' : filter === 'outstanding' ? 'No outstanding balances.' : 'No records found.'}
               </div>
             )}
-            {debtors.map(d => (
+            {filtered.map(d => (
               <button key={d.id} onClick={() => setSelected(d)}
                 className={`w-full text-left bg-white rounded-xl border px-4 py-4 transition-all ${selected?.id === d.id ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'}`}>
                 <div className="flex items-start justify-between">

@@ -69,8 +69,8 @@ export default function Sales() {
     if (profile?.role === 'staff' && profile?.location_id) q = q.eq('id', profile.location_id)
     const { data } = await q
     setLocations(data || [])
-    if (profile?.location_id) setForm(f => ({ ...f, location_id: profile.location_id }))
-    else if (data?.length)    setForm(f => ({ ...f, location_id: data[0].id }))
+    if (profile?.role === 'staff' && profile?.location_id) setForm(f => ({ ...f, location_id: profile.location_id }))
+    else if (data?.length) setForm(f => ({ ...f, location_id: data[0].id }))
   }
   async function fetchRecentSales() {
     let q = supabase

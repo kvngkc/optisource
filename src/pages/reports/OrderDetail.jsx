@@ -32,8 +32,8 @@ export default function OrderDetail() {
   const { id } = useParams()
   const { profile } = useAuth()
   const navigate = useNavigate()
-  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff'
-  const isCompanyUser = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff'
+  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff' || profile?.role === 'manager'
+  const isCompanyUser = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff' || profile?.role === 'manager'
 
   const [order, setOrder]       = useState(null)
   const [items, setItems]       = useState([])
@@ -183,11 +183,24 @@ export default function OrderDetail() {
         }
       }
       
-      // Log audit
+      // Log audit with full item detail
       await supabase.from('audit_log').insert({
         company_id: profile.company_id, user_id: profile.id,
         status: 'SUCCESS', action: 'SALE',
-        details: { action: 'Order Dispatched', order_id: id, items: items.length }
+        details: {
+          action: 'Order Dispatched',
+          order_id: id,
+          optician: order.optician_name,
+          dispatch_location: locations.find(l => l.id === dispatchLoc)?.code || dispatchLoc,
+          items: items.map(item => ({
+            product: item.product_name,
+            spec: item.spec_details,
+            qty: item.qty,
+            unit_price: item.unit_price,
+            subtotal: item.subtotal,
+          })),
+          total: items.reduce((s, i) => s + (i.subtotal || 0), 0),
+        }
       })
     }
 

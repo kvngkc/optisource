@@ -25,7 +25,7 @@ function timeAgo(ts) {
 
 export default function Orders() {
   const { profile } = useAuth()
-  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff'
+  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff' || profile?.role === 'manager'
 
   const [orders, setOrders]   = useState([])
   const [loading, setLoading] = useState(true)

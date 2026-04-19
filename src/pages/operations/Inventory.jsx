@@ -817,44 +817,77 @@ async function runInventoryImport(validatedRows, importMode, profile) {
 }
 
 function ImportDataTab({ profile }) {
-  const [selectedTplId, setSelectedTplId] = useState('finished_sph_add')
-  const [mode, setMode] = useState('csv')
-  const [step, setStep] = useState('upload')
+  const [products, setProducts]   = useState([])
+  const [classes, setClasses]     = useState([])
+  const [classId, setClassId]     = useState('')
+  const [productId, setProductId] = useState('')
+  const [step, setStep]           = useState('pick')   // 'pick' | 'upload' | 'preview' | 'done'
   const [validatedRows, setValidatedRows] = useState([])
-  const [importMode, setImportMode] = useState('add')
-  const [dragging, setDragging] = useState(false)
+  const [importMode, setImportMode]       = useState('add')
+  const [dragging, setDragging]   = useState(false)
   const [fileError, setFileError] = useState('')
   const [importing, setImporting] = useState(false)
-  const [summary, setSummary] = useState(null)
+  const [summary, setSummary]     = useState(null)
   const fileRef = useRef()
-  const template = ALL_IMPORT_TEMPLATES.find(t => t.id === selectedTplId) || ALL_IMPORT_TEMPLATES[0]
+
+  useEffect(() => {
+    if (profile?.company_id) {
+      supabase.from('product_classes').select('*').eq('company_id', profile.company_id).order('name')
+        .then(({ data }) => { setClasses(data || []); if (data?.length) setClassId(data[0].id) })
+    }
+  }, [profile])
+
+  useEffect(() => {
+    if (classId) {
+      supabase.from('products').select('id, name, spec_type').eq('company_id', profile.company_id).eq('class_id', classId).eq('is_active', true).order('name')
+        .then(({ data }) => { setProducts(data || []); setProductId(data?.[0]?.id || '') })
+    }
+  }, [classId])
+
+  const selectedProduct = products.find(p => p.id === productId)
+  // Derive the template from the product's spec_type
+  const template = selectedProduct
+    ? ALL_IMPORT_TEMPLATES.find(t => t.spec_type === selectedProduct.spec_type) || ALL_IMPORT_TEMPLATES[0]
+    : null
+
+  // Template CSV cols without product_name (it's captured via dropdown)
+  const csvCols = template ? template.csvCols.filter(c => c !== 'product_name') : []
 
   async function validateRows(rows) {
-    const [prodRes, locRes] = await Promise.all([
-      supabase.from('products').select('id, name, spec_type').eq('company_id', profile.company_id).eq('is_active', true),
-      supabase.from('locations').select('id, name, code').eq('company_id', profile.company_id),
-    ])
-    const productMap  = Object.fromEntries((prodRes.data||[]).map(p=>[p.name.toLowerCase().trim(),p]))
-    const locationMap = Object.fromEntries((locRes.data||[]).map(l=>[l.code.toLowerCase().trim(),l]))
-    return rows.map((row,i) => {
-      const productName=(row.product_name||'').trim(), locationCode=(row.location_code||'').trim(), qty=parseInt(row.qty,10)
-      const product=productMap[productName.toLowerCase()], location=locationMap[locationCode.toLowerCase()]
-      const errors=[]
-      if(!productName)errors.push('Missing product name'); else if(!product)errors.push(`"${productName}" not found`)
-      if(!locationCode)errors.push('Missing location'); else if(!location)errors.push(`Location "${locationCode}" not found`)
-      if(isNaN(qty)||qty<=0)errors.push('Qty must be positive')
-      return { rowNum:i+2,...row,product_name:productName,location_code:locationCode,product,location,qty:isNaN(qty)?0:qty,specs:buildImportSpecs(row,template),errors,status:errors.length?'error':'ready' }
+    const { data: locs } = await supabase.from('locations').select('id, name, code').eq('company_id', profile.company_id)
+    const locationMap = Object.fromEntries((locs || []).map(l => [l.code.toLowerCase().trim(), l]))
+    return rows.map((row, i) => {
+      const locationCode = (row.location_code || '').trim()
+      const qty = parseInt(row.qty, 10)
+      const location = locationMap[locationCode.toLowerCase()]
+      const errors = []
+      if (!locationCode) errors.push('Missing location'); else if (!location) errors.push(`Location "${locationCode}" not found`)
+      if (isNaN(qty) || qty <= 0) errors.push('Qty must be positive')
+      return {
+        rowNum: i + 2, ...row,
+        location_code: locationCode,
+        product: selectedProduct,
+        location,
+        qty: isNaN(qty) ? 0 : qty,
+        specs: buildImportSpecs({ ...row, product_name: selectedProduct.name }, template),
+        errors,
+        status: errors.length ? 'error' : 'ready',
+      }
     })
   }
 
   async function processFile(file) {
-    if(!file)return
-    if(!file.name.match(/\.(csv|txt)$/i)){setFileError('Please upload a .csv file.');return}
+    if (!file) return
+    if (!file.name.match(/\.(csv|txt)$/i)) { setFileError('Please upload a .csv file.'); return }
     setFileError('')
     const text = await file.text()
     const rows = parseImportCSV(text)
-    if(!rows.length){setFileError('File appears empty.');return}
-    const normalized = rows.map(row=>{ const r={...row}; if(template.sphKey==='base'&&!r.base&&r.sph)r.base=r.sph; return r })
+    if (!rows.length) { setFileError('File appears empty.'); return }
+    const normalized = rows.map(row => {
+      const r = { ...row }
+      if (template.sphKey === 'base' && !r.base && r.sph) r.base = r.sph
+      return r
+    })
     const validated = await validateRows(normalized)
     setValidatedRows(validated); setStep('preview')
   }
@@ -865,10 +898,13 @@ function ImportDataTab({ profile }) {
     setSummary(result); setImporting(false); setStep('done')
   }
 
-  function reset() { setStep('upload');setValidatedRows([]);setFileError('');setSummary(null); if(fileRef.current)fileRef.current.value='' }
+  function reset() {
+    setStep('pick'); setValidatedRows([]); setFileError(''); setSummary(null)
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
-  const readyRows = validatedRows.filter(r=>r.status==='ready')
-  const errorRows = validatedRows.filter(r=>r.status==='error')
+  const readyRows  = validatedRows.filter(r => r.status === 'ready')
+  const errorRows  = validatedRows.filter(r => r.status === 'error')
 
   if (importing) return (
     <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">
@@ -884,9 +920,10 @@ function ImportDataTab({ profile }) {
         <svg className="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
       </div>
       <h2 className="text-lg font-bold text-slate-900 mb-1">Import complete</h2>
-      <div className="grid grid-cols-3 gap-3 mb-7 max-w-xs mx-auto mt-4">
+      <p className="text-sm text-slate-500 mb-4">Product: <strong>{selectedProduct?.name}</strong></p>
+      <div className="grid grid-cols-3 gap-3 mb-7 max-w-xs mx-auto">
         <div className="bg-green-50 rounded-xl p-3 text-center"><p className="text-xl font-bold text-green-700">{summary.imported}</p><p className="text-xs text-green-600">Imported</p></div>
-        <div className={`rounded-xl p-3 text-center ${summary.failed?'bg-red-50':'bg-slate-50'}`}><p className={`text-xl font-bold ${summary.failed?'text-red-600':'text-slate-300'}`}>{summary.failed}</p><p className={`text-xs ${summary.failed?'text-red-500':'text-slate-300'}`}>Failed</p></div>
+        <div className={`rounded-xl p-3 text-center ${summary.failed ? 'bg-red-50' : 'bg-slate-50'}`}><p className={`text-xl font-bold ${summary.failed ? 'text-red-600' : 'text-slate-300'}`}>{summary.failed}</p><p className={`text-xs ${summary.failed ? 'text-red-500' : 'text-slate-300'}`}>Failed</p></div>
         <div className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-xl font-bold text-slate-400">{summary.skipped}</p><p className="text-xs text-slate-400">Skipped</p></div>
       </div>
       <button onClick={reset} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors">Import another batch</button>
@@ -895,10 +932,17 @@ function ImportDataTab({ profile }) {
 
   if (step === 'preview') return (
     <div className="space-y-4">
+      <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 flex items-center gap-3">
+        <span className="text-xl">📦</span>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{selectedProduct?.name}</p>
+          <p className="text-xs text-slate-400">{template?.label}</p>
+        </div>
+      </div>
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl p-4 text-center border bg-slate-50 border-slate-100"><p className="text-2xl font-bold text-slate-700">{validatedRows.length}</p><p className="text-xs text-slate-400 mt-0.5">Total rows</p></div>
         <div className="rounded-xl p-4 text-center border bg-green-50 border-green-100"><p className="text-2xl font-bold text-green-600">{readyRows.length}</p><p className="text-xs text-green-500 mt-0.5">Ready</p></div>
-        <div className={`rounded-xl p-4 text-center border ${errorRows.length?'bg-red-50 border-red-100':'bg-slate-50 border-slate-100'}`}><p className={`text-2xl font-bold ${errorRows.length?'text-red-600':'text-slate-300'}`}>{errorRows.length}</p><p className={`text-xs mt-0.5 ${errorRows.length?'text-red-500':'text-slate-300'}`}>Will skip</p></div>
+        <div className={`rounded-xl p-4 text-center border ${errorRows.length ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}><p className={`text-2xl font-bold ${errorRows.length ? 'text-red-600' : 'text-slate-300'}`}>{errorRows.length}</p><p className={`text-xs mt-0.5 ${errorRows.length ? 'text-red-500' : 'text-slate-300'}`}>Will skip</p></div>
       </div>
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto" style={{maxHeight:'22rem',overflowY:'auto'}}>
@@ -906,20 +950,18 @@ function ImportDataTab({ profile }) {
             <thead className="bg-slate-50 sticky top-0">
               <tr>
                 <th className="px-3 py-2.5 text-left text-slate-500 font-medium">#</th>
-                <th className="px-3 py-2.5 text-left text-slate-500 font-medium">Product</th>
                 <th className="px-3 py-2.5 text-left text-slate-500 font-medium">Loc</th>
                 <th className="px-3 py-2.5 text-right text-slate-500 font-medium">Qty</th>
                 <th className="px-3 py-2.5 text-left text-slate-500 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
-              {validatedRows.map((row,i)=>(
-                <tr key={i} className={`border-t border-slate-100 ${row.status==='error'?'bg-red-50':'hover:bg-slate-50'}`}>
+              {validatedRows.map((row, i) => (
+                <tr key={i} className={`border-t border-slate-100 ${row.status === 'error' ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
                   <td className="px-3 py-2.5 text-slate-400">{row.rowNum}</td>
-                  <td className="px-3 py-2.5 text-slate-900 font-medium"><span className="block truncate max-w-[130px]">{row.product_name||'—'}</span></td>
-                  <td className="px-3 py-2.5 text-slate-600">{row.location_code||'—'}</td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{row.qty||'—'}</td>
-                  <td className="px-3 py-2.5">{row.status==='error'?<span className="text-red-500">{row.errors[0]}</span>:<span className="text-green-600 font-medium">Ready</span>}</td>
+                  <td className="px-3 py-2.5 text-slate-600">{row.location_code || '—'}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-slate-900">{row.qty || '—'}</td>
+                  <td className="px-3 py-2.5">{row.status === 'error' ? <span className="text-red-500">{row.errors[0]}</span> : <span className="text-green-600 font-medium">Ready</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -927,61 +969,112 @@ function ImportDataTab({ profile }) {
         </div>
       </div>
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-        {[{v:'add',l:'Add to existing'},{v:'replace',l:'Replace stock'}].map(o=>(
-          <button key={o.v} onClick={()=>setImportMode(o.v)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${importMode===o.v?'bg-white text-slate-900 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>{o.l}</button>
+        {[{v:'add',l:'Add to existing'},{v:'replace',l:'Replace stock'}].map(o => (
+          <button key={o.v} onClick={() => setImportMode(o.v)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${importMode === o.v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{o.l}</button>
         ))}
       </div>
       <div className="flex gap-3">
-        <button onClick={reset} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">← Re-upload</button>
-        {readyRows.length > 0 && <button onClick={handleImport} className="flex-1 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-800">Import {readyRows.length} row{readyRows.length!==1?'s':''}{errorRows.length>0&&<span className="text-slate-400 font-normal ml-1">· {errorRows.length} skipped</span>}</button>}
+        <button onClick={() => setStep('upload')} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">← Re-upload</button>
+        {readyRows.length > 0 && <button onClick={handleImport} className="flex-1 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-800">Import {readyRows.length} row{readyRows.length !== 1 ? 's' : ''}{errorRows.length > 0 && <span className="text-slate-400 font-normal ml-1">· {errorRows.length} skipped</span>}</button>}
       </div>
     </div>
   )
 
-  return (
+  // Upload step
+  if (step === 'upload') return (
     <div className="space-y-4">
-      {/* Template picker */}
-      <div className="space-y-4">
-        {TEMPLATE_GROUPS.map(group=>(
-          <div key={group.group}>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{group.group}</p>
-            <div className="flex flex-wrap gap-2">
-              {group.templates.map(tpl=>(
-                <button key={tpl.id} onClick={()=>setSelectedTplId(tpl.id)} className={`text-left px-4 py-3 rounded-xl border text-xs transition-colors ${selectedTplId===tpl.id?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-700 border-slate-200 hover:border-slate-400'}`}>
-                  <p className="font-semibold">{tpl.label}</p>
-                  <p className="mt-0.5 text-slate-400">{tpl.desc}</p>
-                </button>
-              ))}
-            </div>
+      <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">📦</span>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">{selectedProduct?.name}</p>
+            <p className="text-xs text-slate-400">{template?.label}</p>
           </div>
-        ))}
+        </div>
+        <button onClick={() => setStep('pick')} className="text-xs text-slate-400 hover:text-slate-700">← Change</button>
       </div>
-      {/* Download template */}
+
       <div className="bg-slate-900 text-white rounded-2xl p-5 flex items-start gap-4">
         <span className="text-2xl flex-shrink-0 mt-0.5">📄</span>
         <div>
-          <p className="text-sm font-semibold mb-1">Step 1 — download the {template.label} template</p>
-          <p className="text-xs text-slate-400 mb-3 leading-relaxed">Fill it in from your records. Product names must exactly match what's in your Products list.</p>
-          <button onClick={()=>downloadImportTemplate(template)} className="text-xs bg-white text-slate-900 px-4 py-2 rounded-lg font-semibold hover:bg-slate-100">Download template CSV</button>
+          <p className="text-sm font-semibold mb-1">Download the template for {template?.label}</p>
+          <p className="text-xs text-slate-400 mb-3 leading-relaxed">Fill in your stock data. The product is already selected — only location and spec columns are needed.</p>
+          <button onClick={() => {
+            const cols = csvCols
+            const ex = template?.examples?.map(e => {
+              // Strip product_name from example rows
+              const parts = e.split(',')
+              const pidx = template.csvCols.indexOf('product_name')
+              if (pidx >= 0) parts.splice(pidx, 1)
+              return parts.join(',')
+            }) || []
+            const csv = [cols.join(','), ...ex].join('\n')
+            const blob = new Blob([csv], { type: 'text/csv' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url; a.download = `optisource_${selectedProduct?.name?.replace(/\s+/g,'_')}_import.csv`; a.click()
+            URL.revokeObjectURL(url)
+          }} className="text-xs bg-white text-slate-900 px-4 py-2 rounded-lg font-semibold hover:bg-slate-100">Download template CSV</button>
         </div>
       </div>
-      {/* Upload zone */}
+
       <div
-        onDragOver={e=>{e.preventDefault();setDragging(true)}}
-        onDragLeave={()=>setDragging(false)}
-        onDrop={e=>{e.preventDefault();setDragging(false);processFile(e.dataTransfer.files?.[0])}}
-        onClick={()=>fileRef.current?.click()}
-        className={`bg-white border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${dragging?'border-slate-900 bg-slate-50':'border-slate-200 hover:border-slate-400'}`}
+        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); processFile(e.dataTransfer.files?.[0]) }}
+        onClick={() => fileRef.current?.click()}
+        className={`bg-white border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${dragging ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
       >
         <p className="text-4xl mb-3">📂</p>
-        <p className="text-sm font-semibold text-slate-900 mb-1">{dragging?'Drop to upload':'Step 2 — upload your filled CSV'}</p>
+        <p className="text-sm font-semibold text-slate-900 mb-1">{dragging ? 'Drop to upload' : 'Upload your filled CSV'}</p>
         <p className="text-xs text-slate-400">click or drag and drop · .csv files only</p>
-        <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={e=>processFile(e.target.files?.[0])} />
+        <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={e => processFile(e.target.files?.[0])} />
       </div>
       {fileError && <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-xs text-red-600">{fileError}</div>}
       <div className="bg-white border border-slate-200 rounded-2xl p-5">
-        <p className="text-xs font-semibold text-slate-700 mb-3">Expected columns for <span className="text-slate-900">{template.label}</span></p>
-        <div className="flex flex-wrap gap-2">{template.csvCols.map(col=>(<code key={col} className="bg-slate-100 px-2 py-1 rounded-lg font-mono text-xs text-slate-700">{col}</code>))}</div>
+        <p className="text-xs font-semibold text-slate-700 mb-3">Expected columns</p>
+        <div className="flex flex-wrap gap-2">{csvCols.map(col => (<code key={col} className="bg-slate-100 px-2 py-1 rounded-lg font-mono text-xs text-slate-700">{col}</code>))}</div>
+      </div>
+    </div>
+  )
+
+  // Step 0 — pick product
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="text-sm font-semibold text-slate-700 mb-1">Step 1 — Select a product to import stock into</p>
+        <p className="text-xs text-slate-400">The import template will automatically match the product's spec type.</p>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Product class</label>
+          <select value={classId} onChange={e => setClassId(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-base">
+            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
+          <select value={productId} onChange={e => setProductId(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-base">
+            {products.length === 0 ? <option value="">— no products —</option> : products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        {selectedProduct && (
+          <div className="bg-slate-50 rounded-xl px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-500">Template auto-selected</p>
+              <p className="text-sm font-semibold text-slate-800">{template?.label}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{template?.desc}</p>
+            </div>
+            <span className="text-xl">✓</span>
+          </div>
+        )}
+        <button
+          onClick={() => setStep('upload')}
+          disabled={!selectedProduct}
+          className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-semibold text-base hover:bg-slate-700 transition-colors disabled:opacity-40"
+        >
+          Continue →
+        </button>
       </div>
     </div>
   )

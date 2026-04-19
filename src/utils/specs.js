@@ -14,9 +14,8 @@ export const ADD_VALUES  = ['-',
   ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
 ]
 
-export const BASE_VALUES = ['Plano',
-  ...Array.from({ length: 12 }, (_, i) => String((i + 1) * 100))
-]
+// Base values for semi-finished blanks: display as 100, 200, ..., 1000 (no + prefix)
+export const BASE_VALUES = Array.from({ length: 10 }, (_, i) => String((i + 1) * 100))
 
 // Helps parse a displayed Base back to +200 format for database storage if needed
 export function dbFormatBase(v) {

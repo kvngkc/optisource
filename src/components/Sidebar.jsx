@@ -92,6 +92,27 @@ const NAV = {
       ],
     },
   ],
+  manager: [
+    {
+      group: 'Operations',
+      links: [
+        { label: 'Dashboard', path: '/dashboard' },
+        { label: 'Inventory', path: '/inventory' },
+        { label: 'Sales', path: '/sales' },
+        { label: 'Debtors', path: '/debtors' },
+        { label: 'Orders', path: '/orders', badge: true },
+      ],
+    },
+    {
+      group: 'Reports',
+      links: [
+        { label: 'Stock query', path: '/query' },
+        { label: 'Audit log', path: '/audit' },
+        { label: 'Export', path: '/export' },
+        { label: 'Query history', path: '/reports/query-history' },
+      ],
+    },
+  ],
 }
 
 function allLinks(role) {

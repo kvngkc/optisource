@@ -91,7 +91,7 @@ export default function Staff() {
   }
 
   const pending = staff.filter(m => m.role === 'staff' && !m.location_id)
-  const active  = staff.filter(m => m.location_id || m.role === 'optician')
+  const active  = staff.filter(m => m.location_id || m.role === 'optician' || m.role === 'manager')
 
   const companyCode = profile?.companies?.slug
 
@@ -226,6 +226,7 @@ function StaffRow({ member, locations, saving, onAssignLocation, onChangeRole, o
           className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
         >
           <option value="staff">Staff</option>
+          <option value="manager">Manager</option>
           <option value="optician">Optician</option>
           <option value="company_admin">Admin</option>
         </select>
