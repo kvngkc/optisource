@@ -32,7 +32,8 @@ export default function OrderDetail() {
   const { id } = useParams()
   const { profile } = useAuth()
   const navigate = useNavigate()
-  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin'
+  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff'
+  const isCompanyUser = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff'
 
   const [order, setOrder]       = useState(null)
   const [items, setItems]       = useState([])
@@ -114,11 +115,16 @@ export default function OrderDetail() {
       }
     }
 
+    // Support both authenticated users and guest opticians
+    const senderName = profile?.full_name || order?.optician_name || 'Optician'
+    const senderRole = profile?.role || 'optician'
+    const senderId   = profile?.id || order?.optician_id || null
+
     await supabase.from('order_messages').insert({
       order_id:    id,
-      sender_id:   profile.id,
-      sender_name: profile.full_name,
-      sender_role: profile.role,
+      sender_id:   senderId,
+      sender_name: senderName,
+      sender_role: senderRole,
       message:     msgText.trim() || null,
       image_url:   imageUrl,
     })

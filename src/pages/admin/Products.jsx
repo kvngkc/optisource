@@ -802,7 +802,7 @@ function ImportDataTab({ profile }) {
 }
 
 // ── Main Products page ────────────────────────────────────────
-const TABS = ['My Products', 'Global Catalogue', 'Import Data']
+const TABS = ['My Products', 'Global Catalogue']
 
 export default function Products() {
   const { profile } = useAuth()
@@ -1081,8 +1081,6 @@ export default function Products() {
           </>
         )}
 
-        {/* ── Import Data ── */}
-        {tab === 'Import Data' && <ImportDataTab profile={profile} />}
       </div>
     </Layout>
   )

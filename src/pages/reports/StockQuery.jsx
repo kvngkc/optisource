@@ -496,8 +496,8 @@ function OpticianQuery({ profile }) {
       </div>
 
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-slate-700 text-white px-5 py-3 rounded-full text-sm font-semibold shadow-2xl animate-fade-in pointer-events-none flex items-center gap-2">
-          <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-slate-700 text-white px-5 py-3 rounded-full text-sm font-semibold shadow-2xl pointer-events-none flex items-center gap-2 animate-bounce">
+          <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
           {toast}

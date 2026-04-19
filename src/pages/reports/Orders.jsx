@@ -25,11 +25,12 @@ function timeAgo(ts) {
 
 export default function Orders() {
   const { profile } = useAuth()
-  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin'
+  const isAdmin = profile?.role === 'company_admin' || profile?.role === 'super_admin' || profile?.role === 'staff'
 
   const [orders, setOrders]   = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter]   = useState('all')
+  const [search, setSearch]   = useState('')
 
   useEffect(() => {
     if (!profile) return
@@ -56,7 +57,14 @@ export default function Orders() {
   }
 
   const statuses = ['all', 'pending', 'confirmed', 'dispatched', 'delivered', 'rejected']
-  const filtered = filter === 'all' ? orders : orders.filter(o => o.status === filter)
+  const filtered = orders
+    .filter(o => filter === 'all' || o.status === filter)
+    .filter(o => {
+      if (!search.trim()) return true
+      const q = search.trim().toLowerCase()
+      return o.id.slice(0, 8).toLowerCase().includes(q) ||
+             (o.optician_name || '').toLowerCase().includes(q)
+    })
 
   return (
     <Layout>
@@ -70,6 +78,16 @@ export default function Orders() {
               ? 'Orders placed by opticians. Confirm, reject, and mark dispatch here.'
               : 'Track your orders and communicate with your supplier here.'}
           </p>
+        </div>
+
+        {/* Search bar */}
+        <div className="relative mb-4">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by order number or optician name…"
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
         </div>
 
         {/* Filter tabs */}
