@@ -223,6 +223,16 @@ export default function OrderDetail() {
         sender_role: profile.role,
         message:     statusMessages[newStatus],
       })
+      // When confirmed, also send the payment reference instruction
+      if (newStatus === 'confirmed') {
+        await supabase.from('order_messages').insert({
+          order_id:    id,
+          sender_id:   profile.id,
+          sender_name: profile.full_name,
+          sender_role: profile.role,
+          message:     `Kindly use your order ID as payment description: ${id.slice(0, 8).toUpperCase()}`,
+        })
+      }
     }
     await fetchAll()
     setActioning(false)

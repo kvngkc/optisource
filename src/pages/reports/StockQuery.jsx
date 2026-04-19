@@ -102,12 +102,30 @@ function StaffQuery({ profile }) {
       .then(({ data }) => { setProducts(data || []); setForm(f => ({ ...f, product_id: data?.[0]?.id || '' })) })
   }, [form.class_id])
 
-  useEffect(() => { setResults([]); setSearched(false) }, [form.product_id, form.location_id, form.sph, form.cyl, form.axis, form.addition])
+  useEffect(() => { setResults([]); setSearched(false) }, [form.location_id])
+
+  // Reset sph default when product/spec type changes
+  useEffect(() => {
+    if (!selectedProduct) return
+    if (specType.startsWith('base_')) {
+      setForm(f => ({ ...f, sph: '+100', cyl: '+000' }))
+    } else {
+      setForm(f => ({ ...f, sph: 'Plano' }))
+    }
+    setResults([]); setSearched(false)
+  }, [form.product_id])
 
   function update(f, v) { setForm(p => ({ ...p, [f]: v })) }
   function getSpecs() {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name || null }
-    return { sph: form.sph, cyl: specType === 'sph_add' ? null : form.cyl, axis: specType === 'sph_cyl_axis_add' ? form.axis : null, addition: specType === 'sph_cyl' ? null : form.addition, name_key: null }
+    const isBase = specType.startsWith('base_')
+    return {
+      sph:      form.sph,
+      cyl:      (specType === 'sph_add' || isBase) ? null : form.cyl,
+      axis:     specType === 'sph_cyl_axis_add' ? form.axis : null,
+      addition: (specType === 'sph_cyl' || specType === 'base_only') ? null : form.addition,
+      name_key: null,
+    }
   }
 
   async function handleSearch(e) {
@@ -259,7 +277,16 @@ function OpticianQuery({ profile }) {
       .then(({ data }) => { setProducts(data || []); setForm(f => ({ ...f, product_id: data?.[0]?.id || '' })) })
   }, [form.class_id, supplier])
 
-  useEffect(() => { setResults([]); setSearched(false) }, [form.product_id, form.sph, form.cyl, form.axis, form.addition])
+  // Reset sph default when spec type changes
+  useEffect(() => {
+    if (!selectedProduct) return
+    if (specType.startsWith('base_')) {
+      setForm(f => ({ ...f, sph: '+100', cyl: '+000' }))
+    } else {
+      setForm(f => ({ ...f, sph: 'Plano' }))
+    }
+    setResults([]); setSearched(false)
+  }, [form.product_id])
 
   async function handleConnect(e) {
     e.preventDefault()
@@ -286,7 +313,14 @@ function OpticianQuery({ profile }) {
 
   function getSpecs() {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name || null }
-    return { sph: form.sph, cyl: specType === 'sph_add' ? null : form.cyl, axis: specType === 'sph_cyl_axis_add' ? form.axis : null, addition: specType === 'sph_cyl' ? null : form.addition, name_key: null }
+    const isBase = specType.startsWith('base_')
+    return {
+      sph:      form.sph,
+      cyl:      (specType === 'sph_add' || isBase) ? null : form.cyl,
+      axis:     specType === 'sph_cyl_axis_add' ? form.axis : null,
+      addition: (specType === 'sph_cyl' || specType === 'base_only') ? null : form.addition,
+      name_key: null,
+    }
   }
 
   async function handleSearch(e) {
