@@ -830,6 +830,8 @@ function ImportDataTab({ profile }) {
   const [summary, setSummary]     = useState(null)
   const fileRef = useRef()
 
+  const [overrideTplId, setOverrideTplId] = useState('')
+
   useEffect(() => {
     if (profile?.company_id) {
       supabase.from('product_classes').select('*').eq('company_id', profile.company_id).order('name')
@@ -844,11 +846,18 @@ function ImportDataTab({ profile }) {
     }
   }, [classId])
 
+  useEffect(() => { setOverrideTplId('') }, [productId])
+
   const selectedProduct = products.find(p => p.id === productId)
-  // Derive the template from the product's spec_type
-  const template = selectedProduct
+  
+  // Derive the default template from the product's spec_type
+  const defaultTemplate = selectedProduct
     ? ALL_IMPORT_TEMPLATES.find(t => t.spec_type === selectedProduct.spec_type) || ALL_IMPORT_TEMPLATES[0]
     : null
+    
+  const template = overrideTplId 
+    ? ALL_IMPORT_TEMPLATES.find(t => t.id === overrideTplId) || defaultTemplate 
+    : defaultTemplate
 
   // Template CSV cols without product_name (it's captured via dropdown)
   const csvCols = template ? template.csvCols.filter(c => c !== 'product_name') : []
@@ -1059,13 +1068,26 @@ function ImportDataTab({ profile }) {
           </select>
         </div>
         {selectedProduct && (
-          <div className="bg-slate-50 rounded-xl px-4 py-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-500">Template auto-selected</p>
-              <p className="text-sm font-semibold text-slate-800">{template?.label}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{template?.desc}</p>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Import template</p>
+              <span className="text-green-600 text-sm font-bold">✓</span>
             </div>
-            <span className="text-xl">✓</span>
+            <select
+              value={template?.id || ''}
+              onChange={e => setOverrideTplId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white font-medium text-slate-800 mb-1"
+            >
+              <optgroup label="Auto-selected (Recommended)">
+                {defaultTemplate && <option value={defaultTemplate.id}>{defaultTemplate.label}</option>}
+              </optgroup>
+              <optgroup label="Other templates">
+                {ALL_IMPORT_TEMPLATES.filter(t => t.id !== defaultTemplate?.id).map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </optgroup>
+            </select>
+            <p className="text-xs text-slate-400 pl-1">{template?.desc}</p>
           </div>
         )}
         <button
