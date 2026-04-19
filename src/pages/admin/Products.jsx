@@ -813,7 +813,8 @@ export default function Products() {
   const [adopted, setAdopted]     = useState(new Set())
   const [filterClass, setFilter]  = useState('all')
   const [catFilter, setCatFilter] = useState('all')
-  const [form, setForm]           = useState({ name: '', class_id: '', spec_type: 'sph_add' })
+  const [form, setForm]           = useState({ name: '', class_id: '', spec_type: 'sph_add', new_class: '' })
+  const [isCreatingClass, setIsCreatingClass] = useState(false)
   const [loading, setLoading]     = useState(false)
   const [msg, setMsg]             = useState({ type: '', text: '' })
 
@@ -825,7 +826,7 @@ export default function Products() {
     const { data } = await supabase.from('product_classes').select('*')
       .eq('company_id', profile.company_id).order('name')
     setClasses(data || [])
-    if (data?.length && !form.class_id) setForm(f => ({ ...f, class_id: data[0].id }))
+    if (data?.length && !form.class_id && !isCreatingClass) setForm(f => ({ ...f, class_id: data[0].id }))
   }
   async function fetchProducts() {
     const { data } = await supabase.from('products').select('*, product_classes(name)')
@@ -843,10 +844,27 @@ export default function Products() {
 
   async function addCustomProduct(e) {
     e.preventDefault()
-    if (!form.name.trim() || !form.class_id) { flash('error', 'Name and class are required'); return }
+    if (!form.name.trim()) { flash('error', 'Name is required'); return }
+    
     setLoading(true)
+    let finalClassId = form.class_id
+
+    if (isCreatingClass) {
+      if (!form.new_class.trim()) { flash('error', 'Class name is required'); setLoading(false); return }
+      const { data, error } = await supabase.from('product_classes').insert({
+        company_id: profile.company_id, name: form.new_class.trim()
+      }).select().single()
+      if (error) { flash('error', error.message); setLoading(false); return }
+      finalClassId = data.id
+      setClasses(curr => [...curr, data])
+      setIsCreatingClass(false)
+      setForm(f => ({ ...f, class_id: data.id, new_class: '' }))
+    }
+
+    if (!finalClassId) { flash('error', 'Please select or create a class'); setLoading(false); return }
+
     const { error } = await supabase.from('products').insert({
-      company_id: profile.company_id, class_id: form.class_id,
+      company_id: profile.company_id, class_id: finalClassId,
       name: form.name.trim(), spec_type: form.spec_type,
     })
     if (error) flash('error', error.message)
@@ -856,14 +874,23 @@ export default function Products() {
 
   async function adoptProduct(gp) {
     if (adopted.has(gp.id)) return
-    const matchClass = classes.find(c => c.name === gp.class_name)
-    if (!matchClass) { flash('error', `Class "${gp.class_name}" not found. Add it first in Locations.`); return }
+    setLoading(true)
+    let matchClass = classes.find(c => c.name === gp.class_name)
+    if (!matchClass) {
+      const { data, error } = await supabase.from('product_classes').insert({
+        company_id: profile.company_id, name: gp.class_name
+      }).select().single()
+      if (error) { flash('error', error.message); setLoading(false); return }
+      matchClass = data
+      setClasses(curr => [...curr, data])
+    }
     const { error } = await supabase.from('products').insert({
       company_id: profile.company_id, class_id: matchClass.id,
       name: gp.name, spec_type: gp.spec_type, global_product_id: gp.id,
     })
     if (error) flash('error', error.message)
     else { flash('success', `${gp.name} added`); fetchProducts() }
+    setLoading(false)
   }
 
   async function adoptAll() {
@@ -871,9 +898,19 @@ export default function Products() {
     if (!toAdopt.length) { flash('error', 'All shown products already added'); return }
     setLoading(true)
     let added = 0
+    let currentClasses = [...classes]
     for (const gp of toAdopt) {
-      const matchClass = classes.find(c => c.name === gp.class_name)
-      if (!matchClass) continue
+      let matchClass = currentClasses.find(c => c.name === gp.class_name)
+      if (!matchClass) {
+        const { data, error } = await supabase.from('product_classes').insert({
+          company_id: profile.company_id, name: gp.class_name
+        }).select().single()
+        if (!error && data) {
+          matchClass = data
+          currentClasses.push(data)
+          setClasses([...currentClasses])
+        } else continue
+      }
       const { error } = await supabase.from('products').insert({
         company_id: profile.company_id, class_id: matchClass.id,
         name: gp.name, spec_type: gp.spec_type, global_product_id: gp.id,
@@ -940,11 +977,24 @@ export default function Products() {
                       className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Class</label>
-                    <select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
-                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <label className="block text-sm font-medium text-slate-700 mb-1 flex justify-between">
+                      <span>Class</span>
+                      <button type="button" onClick={() => setIsCreatingClass(!isCreatingClass)} className="text-xs text-blue-600 font-semibold hover:underline">
+                        {isCreatingClass ? 'Cancel' : '+ New Class'}
+                      </button>
+                    </label>
+                    {isCreatingClass ? (
+                      <input type="text" value={form.new_class}
+                        onChange={e => setForm(f => ({ ...f, new_class: e.target.value }))}
+                        placeholder="e.g. Frames"
+                        className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                    ) : (
+                      <select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value }))}
+                        className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                        {classes.length === 0 && <option value="">-- Click + New Class --</option>}
+                        {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Spec type</label>
