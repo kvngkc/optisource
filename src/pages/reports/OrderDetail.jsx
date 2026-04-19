@@ -109,10 +109,13 @@ export default function OrderDetail() {
       const ext = imageFile.name.split('.').pop()
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
       const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, imageFile)
-      if (!error && data) {
-        const { data: pub } = supabase.storage.from('order-attachments').getPublicUrl(fileName)
-        imageUrl = pub.publicUrl
+      if (error || !data) {
+        alert("Failed to upload image: " + (error?.message || "Unknown error"))
+        setSending(false)
+        return
       }
+      const { data: pub } = supabase.storage.from('order-attachments').getPublicUrl(fileName)
+      imageUrl = pub.publicUrl
     }
 
     // Support both authenticated users and guest opticians
