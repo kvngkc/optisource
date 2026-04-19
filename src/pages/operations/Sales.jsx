@@ -2,11 +2,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
+import { SPH_VALUES, CYL_VALUES, AXIS_VALUES, ADD_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
+import { resolvePrice } from '../../utils/pricing'
 
-const SPH_VALUES = ['Plano', ...Array.from({ length: 80 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 80 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0'))]
-const CYL_VALUES = ['-', '+000', ...Array.from({ length: 16 }, (_, i) => '-' + String((i + 1) * 25).padStart(3, '0')), ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]
-const AXIS_VALUES = ['-', '90', '180']
-const ADD_VALUES  = ['-', ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0'))]
 const PAYMENT_METHODS = ['Cash', 'POS', 'Transfer', 'NIL']
 
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
@@ -95,6 +93,7 @@ export default function Sales() {
   const selectedProduct = products.find(p => p.id === form.product_id)
   const specType        = selectedProduct?.spec_type || 'sph_add'
   const isUtility       = specType === 'name_only'
+  const usesBase        = specType.startsWith('base_')
   const totalAmount     = (Number(form.qty) * Number(form.unit_price)) || 0
   const balance         = totalAmount - (Number(form.amount_paid) || 0)
 
@@ -111,17 +110,15 @@ export default function Sales() {
   async function loadDefaultPrice() {
     const sel = products.find(p => p.id === form.product_id)
     if (!sel || sel.spec_type === 'name_only') return
-    let q = supabase.from('product_prices').select('price')
-      .eq('company_id', profile.company_id).eq('product_id', form.product_id)
-    const sph      = form.sph
-    const cyl      = sel.spec_type === 'sph_add' ? null : form.cyl
-    const addition = sel.spec_type === 'sph_cyl' ? null : form.addition
-    sph      === null ? q = q.is('sph', null)      : q = q.eq('sph', sph)
-    cyl      === null ? q = q.is('cyl', null)      : q = q.eq('cyl', cyl)
-    addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition)
-    q = q.is('axis', null).is('name_key', null)
-    const { data } = await q.maybeSingle()
-    if (data?.price) setForm(f => ({ ...f, unit_price: String(data.price) }))
+    const specs = {
+      sph:      form.sph,
+      cyl:      sel.spec_type === 'sph_add' || sel.spec_type === 'base_add' ? null : form.cyl,
+      axis:     sel.spec_type === 'sph_cyl_axis_add' ? form.axis : null,
+      addition: sel.spec_type === 'sph_cyl' || sel.spec_type === 'base_only' ? null : form.addition,
+      name_key: null,
+    }
+    const price = await resolvePrice(form.product_id, profile.company_id, specs)
+    if (price != null) setForm(f => ({ ...f, unit_price: String(price) }))
   }
 
   async function checkStock() {
@@ -312,9 +309,12 @@ export default function Sales() {
             {!isUtility && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">SPH</label>
-                  <select value={form.sph} onChange={e => update('sph', e.target.value)} className={sc}>
-                    {SPH_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{usesBase ? 'Base' : 'SPH'}</label>
+                  <select value={usesBase ? form.sph.replace('+', '') : form.sph} onChange={e => {
+                    const v = usesBase ? (e.target.value === 'Plano' || e.target.value === '-' ? e.target.value : (e.target.value.startsWith('+') || e.target.value.startsWith('-') ? e.target.value : '+' + e.target.value)) : e.target.value
+                    update('sph', v)
+                  }} className={sc}>
+                    {(usesBase ? BASE_VALUES : SPH_VALUES).map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
                 {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (

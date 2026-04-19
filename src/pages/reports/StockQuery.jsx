@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
 
 import { SPH_VALUES, CYL_VALUES, AXIS_VALUES, ADD_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
+import { resolvePrice } from '../../utils/pricing'
 
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
   let q = base
@@ -309,27 +310,8 @@ function OpticianQuery({ profile }) {
     if (!results[0]?.available) return
     const specs = results[0].specs
 
-    // Fetch price if available
-    let unitPrice = null
-    let q = supabase.from('product_prices').select('price').eq('product_id', form.product_id).eq('company_id', supplier.id)
-    if (specs.sph      !== null) q = q.eq('sph', specs.sph)           ; else q = q.is('sph', null)
-    if (specs.cyl      !== null) q = q.eq('cyl', specs.cyl)           ; else q = q.is('cyl', null)
-    if (specs.axis     !== null) q = q.eq('axis', specs.axis)         ; else q = q.is('axis', null)
-    if (specs.addition !== null) q = q.eq('addition', specs.addition) ; else q = q.is('addition', null)
-    if (specs.name_key !== null) q = q.eq('name_key', specs.name_key) ; else q = q.is('name_key', null)
-    
-    // First try exact spec matches
-    const { data: exactPriceRow } = await q.maybeSingle()
-    if (exactPriceRow) {
-      unitPrice = exactPriceRow.price
-    } else {
-      // If exact spec not found, try base (null) price for this product
-      const { data: basePriceRow } = await supabase.from('product_prices').select('price')
-        .eq('product_id', form.product_id).eq('company_id', supplier.id)
-        .is('sph', null).is('cyl', null).is('axis', null).is('addition', null).is('name_key', null)
-        .maybeSingle()
-      if (basePriceRow) unitPrice = basePriceRow.price
-    }
+    // Fetch price leveraging exact, range, and base fallback logic
+    const unitPrice = await resolvePrice(form.product_id, supplier.id, specs)
 
     // Check if same item already in cart and bump qty
     const key = `${form.product_id}||${JSON.stringify(specs)}`
@@ -573,8 +555,8 @@ function OpticianQuery({ profile }) {
                       className="px-3 py-2 text-slate-500 hover:bg-slate-50 text-base font-bold">+</button>
                   </div>
                   <button onClick={addToCart}
-                    className="flex-1 bg-slate-900 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors">
-                    Add to cart
+                    className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors ${toast ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-900 hover:bg-slate-800'}`}>
+                    {toast || 'Add to cart'}
                   </button>
                 </div>)}
             </div>))}

@@ -144,12 +144,42 @@ export default function Export() {
     setLoading('')
   }
 
+  async function exportOpticianSales() {
+    setLoading('optician_sales')
+    const { from, to } = getDateRange()
+    const { data } = await supabase
+      .from('optician_orders')
+      .select('created_at, optician_name, optician_order_items(product_name, spec_details, qty, unit_price, subtotal)')
+      .eq('company_id', profile.company_id)
+      .eq('status', 'delivered')
+      .gte('created_at', from)
+      .lte('created_at', to)
+      .order('created_at', { ascending: false })
+
+    const headers = ['Date','Optician','Product','SPH','CYL','Axis','Addition','Qty','Unit Price','Subtotal']
+    const rows = []
+    ;(data || []).forEach(o => {
+      ;(o.optician_order_items || []).forEach(i => {
+         rows.push([
+           new Date(o.created_at).toLocaleString(),
+           o.optician_name, i.product_name,
+           i.spec_details?.sph || '', i.spec_details?.cyl || '',
+           i.spec_details?.axis || '', i.spec_details?.addition || i.spec_details?.name_key || '',
+           i.qty, i.unit_price, i.subtotal
+         ])
+      })
+    })
+    downloadCSV(`optician_completed_sales_${Date.now()}.csv`, toCSV(headers, rows))
+    setLoading('')
+  }
+
   const EXPORTS = [
     { key: 'sales',     label: 'Sales',         desc: 'All sales transactions with payment details', fn: exportSales,     color: 'bg-purple-50 border-purple-200' },
     { key: 'inventory', label: 'Inventory adds', desc: 'All stock additions by product and location',  fn: exportInventory, color: 'bg-blue-50 border-blue-200' },
-    { key: 'audit',     label: 'Audit log',      desc: 'Complete action history with users',            fn: exportAuditLog,  color: 'bg-slate-50 border-slate-200' },
-    { key: 'queries',   label: 'Optician queries',desc: 'Log of stock lookups by external opticians',   fn: exportQueries,   color: 'bg-emerald-50 border-emerald-200' },
-    { key: 'debtors',   label: 'Debtors',        desc: 'Outstanding and settled balances',             fn: exportDebtors,   color: 'bg-amber-50 border-amber-200' },
+    { key: 'audit',          label: 'Audit log',               desc: 'Complete action history with users',            fn: exportAuditLog,       color: 'bg-slate-50 border-slate-200' },
+    { key: 'queries',        label: 'Optician queries',        desc: 'Log of stock lookups by external opticians',    fn: exportQueries,        color: 'bg-emerald-50 border-emerald-200' },
+    { key: 'optician_sales', label: 'Optician completed sales',desc: 'B2B orders completed and delivered',            fn: exportOpticianSales,  color: 'bg-blue-50 border-blue-200' },
+    { key: 'debtors',        label: 'Debtors',                 desc: 'Outstanding and settled balances',              fn: exportDebtors,        color: 'bg-amber-50 border-amber-200' },
   ]
 
   return (
