@@ -143,6 +143,21 @@ export default function OrderDetail() {
     if (!window.confirm(`Mark this order as ${newStatus}?`)) return
     setActioning(true)
 
+    // Release any allocated stock
+    if (newStatus === 'rejected' || newStatus === 'dispatched') {
+      for (const item of items) {
+        if (item.allocations && item.allocations.length > 0) {
+          for (const alloc of item.allocations) {
+            const { data: stockRow } = await supabase.from('stock').select('id, allocated_qty').eq('id', alloc.stock_id).maybeSingle()
+            if (stockRow) {
+              const newAllocated = Math.max(0, (stockRow.allocated_qty || 0) - alloc.qty)
+              await supabase.from('stock').update({ allocated_qty: newAllocated }).eq('id', alloc.stock_id)
+            }
+          }
+        }
+      }
+    }
+
     // Handle fulfillment deduction
     if (newStatus === 'dispatched') {
       for (const item of items) {

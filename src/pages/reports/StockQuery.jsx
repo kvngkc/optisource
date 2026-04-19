@@ -114,11 +114,11 @@ function StaffQuery({ profile }) {
     e.preventDefault(); if (!form.product_id) return
     setLoading(true); setSearched(true)
     const specs = getSpecs()
-    let q = supabase.from('stock').select('qty, sph, cyl, axis, addition, name_key, location_id, locations(name, code)').eq('product_id', form.product_id).eq('company_id', profile.company_id).gt('qty', 0)
+    let q = supabase.from('stock').select('qty, allocated_qty, sph, cyl, axis, addition, name_key, location_id, locations(name, code)').eq('product_id', form.product_id).eq('company_id', profile.company_id).gt('qty', 0)
     if (form.location_id !== 'all') q = q.eq('location_id', form.location_id)
     q = buildStockQuery(q, specs)
     const { data: rows } = await q
-    const formatted = (rows || []).map(s => ({ location: s.locations?.code || '—', spec: buildSpec(s), qty: s.qty }))
+    const formatted = (rows || []).map(s => ({ location: s.locations?.code || '—', spec: buildSpec(s), qty: s.qty, available: s.qty - (s.allocated_qty || 0) }))
     formatted.sort((a, b) => a.location.localeCompare(b.location))
     setResults(formatted); setLoading(false)
   }
@@ -129,6 +129,7 @@ function StaffQuery({ profile }) {
   }
 
   const totalQty = results.reduce((s, r) => s + r.qty, 0)
+  const totalAvailable = results.reduce((s, r) => s + r.available, 0)
 
   return (
     <>
@@ -177,16 +178,19 @@ function StaffQuery({ profile }) {
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-900">{selectedProduct?.name}</p>
-            <p className="text-xs text-slate-400">{totalQty} units</p>
+            <p className="text-xs text-slate-400">{totalAvailable} available ({totalQty} total)</p>
           </div>
           <div className="divide-y divide-slate-100">
             {results.map((r, i) => (
               <div key={i} className="px-4 py-3.5 flex items-center justify-between">
                 <div><p className="text-sm font-medium text-slate-900">{r.spec}</p><p className="text-xs text-slate-400 mt-0.5">{r.location}</p></div>
-                <span className={`text-base font-bold ${r.qty <= 5 ? 'text-amber-600' : 'text-slate-900'}`}>{r.qty}</span>
+                <div className="text-right">
+                  <span className={`text-base font-bold ${r.available <= 5 ? 'text-amber-600' : 'text-slate-900'}`}>{r.available}</span>
+                  {r.qty !== r.available && <p className="text-xs text-amber-600">({r.qty - r.available} reserved)</p>}
+                </div>
               </div>))}
           </div>
-          {totalQty > 0 && <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex justify-between"><span className="text-sm font-semibold text-slate-700">Total</span><span className="text-sm font-bold text-slate-900">{totalQty}</span></div>}
+          {totalQty > 0 && <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex justify-between"><span className="text-sm font-semibold text-slate-700">Total Available</span><span className="text-sm font-bold text-slate-900">{totalAvailable}</span></div>}
         </div>))}
     </>
   )
@@ -289,10 +293,10 @@ function OpticianQuery({ profile }) {
     e.preventDefault(); if (!form.product_id || !supplier) return
     setLoading(true); setSearched(true)
     const specs = getSpecs()
-    let stockQ = supabase.from('stock').select('product_id, company_id').eq('product_id', form.product_id).eq('company_id', supplier.id).gt('qty', 0)
+    let stockQ = supabase.from('stock').select('product_id, company_id, qty, allocated_qty').eq('product_id', form.product_id).eq('company_id', supplier.id).gt('qty', 0)
     stockQ = buildStockQuery(stockQ, specs)
     const { data: stockRows } = await stockQ
-    const isInStock = (stockRows || []).length > 0
+    const isInStock = (stockRows || []).some(s => (s.qty - (s.allocated_qty || 0)) > 0)
     const res = isInStock ? 'in_stock' : 'out_of_stock'
     setResults([{ product: selectedProduct?.name || '—', available: isInStock, specs }])
 
@@ -339,6 +343,38 @@ function OpticianQuery({ profile }) {
   async function placeOrder() {
     if (!cart.length || !supplier) return
     setPlacing(true)
+    
+    // Process allocations
+    const processedCart = []
+    
+    for (const item of cart) {
+      let stockQ = supabase.from('stock').select('id, qty, allocated_qty, location_id')
+        .eq('product_id', item.product_id).eq('company_id', supplier.id)
+      stockQ = buildStockQuery(stockQ, item.spec_details)
+      const { data: stockRows } = await stockQ
+      
+      let toAllocate = item.qty
+      const itemAllocations = []
+      
+      if (stockRows) {
+        for (const row of stockRows) {
+          if (toAllocate <= 0) break
+          const available = row.qty - (row.allocated_qty || 0)
+          if (available > 0) {
+            const allocateAmt = Math.min(toAllocate, available)
+            itemAllocations.push({ stock_id: row.id, location_id: row.location_id, qty: allocateAmt })
+            toAllocate -= allocateAmt
+            
+            await supabase.from('stock').update({
+              allocated_qty: (row.allocated_qty || 0) + allocateAmt
+            }).eq('id', row.id)
+          }
+        }
+      }
+      
+      processedCart.push({ ...item, allocations: itemAllocations })
+    }
+
     const totalKnown = cart.reduce((s, i) => s + (i.subtotal || 0), 0)
     const hasUnpriced = cart.some(i => i.unit_price == null)
 
@@ -354,7 +390,7 @@ function OpticianQuery({ profile }) {
     if (error || !order) { alert('Failed to place order. Please try again.'); setPlacing(false); return }
 
     await supabase.from('optician_order_items').insert(
-      cart.map(item => ({
+      processedCart.map(item => ({
         order_id:     order.id,
         product_id:   item.product_id,
         product_name: item.product_name,
@@ -362,6 +398,7 @@ function OpticianQuery({ profile }) {
         qty:          item.qty,
         unit_price:   item.unit_price,
         subtotal:     item.subtotal,
+        allocations:  item.allocations,
       }))
     )
 

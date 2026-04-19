@@ -386,7 +386,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
       setStockRows(r => r.map(s => ({ ...s, moveQty: '' })))
       const specs = getSpecValues()
       let q = supabase.from('stock')
-        .select('id, qty, location_id, locations(id, name, code)')
+        .select('id, qty, allocated_qty, location_id, locations(id, name, code)')
         .eq('product_id', selForm.product_id)
         .eq('company_id', profile.company_id)
         .gt('qty', 0)
@@ -399,7 +399,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
         location_id:   s.location_id,
         location_code: s.locations?.code,
         location_name: s.locations?.name,
-        available:     s.qty,
+        available:     s.qty - (s.allocated_qty || 0),
         moveQty:       '',
       })))
       setSearching(false)

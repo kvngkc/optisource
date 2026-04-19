@@ -132,9 +132,9 @@ export default function Sales() {
       addition: sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl' ? null : form.addition),
       name_key: sel.spec_type === 'name_only' ? sel.name : null,
     }
-    const base = supabase.from('stock').select('qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
+    const base = supabase.from('stock').select('qty, allocated_qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
     const { data } = await buildStockQuery(base, specs).maybeSingle()
-    setAvailableStock(data?.qty ?? 0)
+    setAvailableStock(data ? (data.qty - (data.allocated_qty || 0)) : 0)
     setStockLoading(false)
   }
 
@@ -148,11 +148,12 @@ export default function Sales() {
     }
     setLoading(true)
     const specs = getSpecs()
-    const base  = supabase.from('stock').select('id, qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
+    const base  = supabase.from('stock').select('id, qty, allocated_qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
     const { data: stockRow } = await buildStockQuery(base, specs).maybeSingle()
-    if (!stockRow || stockRow.qty < qty) {
-      flash('error', `Oversell blocked — only ${stockRow?.qty ?? 0} available`)
-      setAvailableStock(stockRow?.qty ?? 0); setLoading(false); return
+    const stockAvailable = stockRow ? (stockRow.qty - (stockRow.allocated_qty || 0)) : 0
+    if (!stockRow || stockAvailable < qty) {
+      flash('error', `Oversell blocked — only ${stockAvailable} available`)
+      setAvailableStock(stockAvailable); setLoading(false); return
     }
     await supabase.from('stock').update({ qty: stockRow.qty - qty, updated_at: new Date() }).eq('id', stockRow.id)
     let customerId = null
