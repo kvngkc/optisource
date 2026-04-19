@@ -127,13 +127,17 @@ export default function Prices() {
   }
 
   async function deletePrice(id) {
-    await supabase.from('product_prices').delete().eq('id', id)
-    fetchPrices()
+    if (!window.confirm('Delete this price?')) return
+    const { error } = await supabase.from('product_prices').delete().eq('id', id)
+    if (error) flash('error', error.message)
+    else { flash('success', 'Price deleted'); fetchPrices() }
   }
 
   async function deleteRange(id) {
-    await supabase.from('product_price_ranges').delete().eq('id', id)
-    fetchRanges()
+    if (!window.confirm('Delete this range?')) return
+    const { error } = await supabase.from('product_price_ranges').delete().eq('id', id)
+    if (error) flash('error', error.message)
+    else { flash('success', 'Range deleted'); fetchRanges() }
   }
 
   const sc = "w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-base"
