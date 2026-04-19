@@ -104,38 +104,45 @@ export default function OrderDetail() {
     if (!msgText.trim() && !imageFile) return
     setSending(true)
     
-    let imageUrl = null
-    if (imageFile) {
-      const ext = imageFile.name.split('.').pop()
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
-      const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, imageFile)
-      if (error || !data) {
-        alert("Failed to upload image: " + (error?.message || "Unknown error"))
-        setSending(false)
-        return
+    try {
+      let imageUrl = null
+      if (imageFile) {
+        const ext = imageFile.name.split('.').pop()
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
+        const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, imageFile)
+        if (error || !data) {
+          alert("Failed to upload image: " + (error?.message || "Unknown error"))
+          setSending(false)
+          return
+        }
+        const { data: pub } = supabase.storage.from('order-attachments').getPublicUrl(fileName)
+        imageUrl = pub.publicUrl
       }
-      const { data: pub } = supabase.storage.from('order-attachments').getPublicUrl(fileName)
-      imageUrl = pub.publicUrl
+
+      // Support both authenticated users and guest opticians
+      const senderName = profile?.full_name || order?.optician_name || 'Optician'
+      const senderRole = profile?.role || 'optician'
+      const senderId   = profile?.id || order?.optician_id || null
+
+      await supabase.from('order_messages').insert({
+        order_id:    id,
+        sender_id:   senderId,
+        sender_name: senderName,
+        sender_role: senderRole,
+        message:     msgText.trim() || null,
+        image_url:   imageUrl,
+      })
+      setMsgText(''); setImageFile(null)
+      
+      // Refresh messages
+      const { data } = await supabase.from('order_messages').select('*').eq('order_id', id).order('created_at')
+      setMessages(data || [])
+    } catch (err) {
+      console.error("SendMessage crash:", err)
+      alert("An unexpected error occurred: " + err.message)
+    } finally {
+      setSending(false)
     }
-
-    // Support both authenticated users and guest opticians
-    const senderName = profile?.full_name || order?.optician_name || 'Optician'
-    const senderRole = profile?.role || 'optician'
-    const senderId   = profile?.id || order?.optician_id || null
-
-    await supabase.from('order_messages').insert({
-      order_id:    id,
-      sender_id:   senderId,
-      sender_name: senderName,
-      sender_role: senderRole,
-      message:     msgText.trim() || null,
-      image_url:   imageUrl,
-    })
-    setMsgText(''); setImageFile(null)
-    // Refresh messages
-    const { data } = await supabase.from('order_messages').select('*').eq('order_id', id).order('created_at')
-    setMessages(data || [])
-    setSending(false)
   }
 
   async function updateStatus(newStatus) {
