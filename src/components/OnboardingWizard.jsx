@@ -11,7 +11,7 @@ export default function OnboardingWizard({ setupState, onComplete }) {
   const steps = [
     { label: 'Create a location', done: setupState.locations > 0, to: '/admin/locations', desc: 'Where do you hold your physical stock?' },
     { label: 'Add your first product', done: setupState.products > 0, to: '/admin/products', desc: 'Define a product category and name (e.g. Blue Block AR).' },
-    { label: 'Upload inventory', done: setupState.stock > 0, to: '/admin/products', desc: 'Go to the CSV Import tab to bulk upload stock levels.' },
+    { label: 'Upload inventory', done: setupState.stock > 0, to: '/inventory', desc: 'Go to the CSV Import tab to bulk upload stock levels.' },
   ]
 
   const percent = Math.round((steps.filter(s => s.done).length / steps.length) * 100)

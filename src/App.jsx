@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login          from './pages/auth/Login'
 import Register       from './pages/auth/Register'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword  from './pages/auth/ResetPassword'
 import Dashboard      from './pages/operations/Dashboard'
 import Inventory      from './pages/operations/Inventory'
 import Sales          from './pages/operations/Sales'
@@ -24,7 +26,9 @@ export default function App() {
       <Routes>
         <Route path="/"         element={<Navigate to="/login" replace />} />
         <Route path="/login"    element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/register"        element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password"  element={<ResetPassword />} />
 
         <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['company_admin','super_admin','manager']}><Dashboard /></ProtectedRoute>} />
         <Route path="/inventory" element={<ProtectedRoute allowedRoles={['company_admin','super_admin','manager']}><Inventory /></ProtectedRoute>} />
