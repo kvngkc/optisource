@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
+import { compressImage } from '../../utils/image'
 
 const STATUS_STYLES = {
   pending:    'bg-amber-100 text-amber-700',
@@ -107,9 +108,17 @@ export default function OrderDetail() {
     try {
       let imageUrl = null
       if (imageFile) {
-        const ext = imageFile.name.split('.').pop()
+        let payloadToUpload = imageFile
+        try {
+          payloadToUpload = await compressImage(imageFile, 1200, 0.75)
+        } catch (e) {
+          console.warn("Compression failed, uploading original. Error:", e)
+        }
+        
+        const ext = payloadToUpload.name.split('.').pop()
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
-        const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, imageFile)
+        
+        const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, payloadToUpload)
         if (error || !data) {
           alert("Failed to upload image: " + (error?.message || "Unknown error"))
           setSending(false)
