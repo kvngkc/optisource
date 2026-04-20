@@ -386,12 +386,14 @@ function OpticianQuery({ profile }) {
     const key = `${form.product_id}||${JSON.stringify(specs)}`
     const existing = cart.find(c => c.key === key)
     if (existing) {
-      setCart(prev => prev.map(c => c.key === key ? { ...c, qty: c.qty + Number(qty), subtotal: unitPrice != null ? (c.qty + Number(qty)) * unitPrice : null } : c))
+      const newQty = Math.min(existing.qty + Number(qty), 100)
+      setCart(prev => prev.map(c => c.key === key ? { ...c, qty: newQty, subtotal: unitPrice != null ? newQty * unitPrice : null } : c))
     } else {
+      const startQty = Math.min(Number(qty), 100)
       setCart(prev => [...prev, {
         key, product_id: form.product_id, product_name: selectedProduct?.name,
-        spec_details: specs, qty: Number(qty),
-        unit_price: unitPrice, subtotal: unitPrice != null ? Number(qty) * unitPrice : null,
+        spec_details: specs, qty: startQty,
+        unit_price: unitPrice, subtotal: unitPrice != null ? startQty * unitPrice : null,
       }])
     }
     
@@ -401,7 +403,7 @@ function OpticianQuery({ profile }) {
 
   function removeFromCart(key) { setCart(prev => prev.filter(c => c.key !== key)) }
   function updateCartQty(key, qty) {
-    if (qty < 1) return
+    if (qty < 1 || qty > 100) return
     setCart(prev => prev.map(c => c.key === key ? { ...c, qty, subtotal: c.unit_price != null ? qty * c.unit_price : null } : c))
   }
 
@@ -658,9 +660,9 @@ function OpticianQuery({ profile }) {
                   <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden">
                     <button type="button" onClick={() => setAddQty(curr => ({ ...curr, [i]: Math.max(1, qty - 1) }))}
                       className="px-3 py-2 text-slate-500 hover:bg-slate-50 text-base font-bold">−</button>
-                    <input type="number" min="1" value={qty} onChange={e => setAddQty(curr => ({ ...curr, [i]: Math.max(1, Number(e.target.value)) }))}
+                    <input type="number" min="1" max="100" value={qty} onChange={e => setAddQty(curr => ({ ...curr, [i]: Math.min(100, Math.max(1, Number(e.target.value))) }))}
                       className="w-12 text-center py-2 text-sm font-semibold text-slate-900 focus:outline-none" />
-                    <button type="button" onClick={() => setAddQty(curr => ({ ...curr, [i]: qty + 1 }))}
+                    <button type="button" onClick={() => setAddQty(curr => ({ ...curr, [i]: Math.min(100, qty + 1) }))}
                       className="px-3 py-2 text-slate-500 hover:bg-slate-50 text-base font-bold">+</button>
                   </div>
                   <button onClick={() => addToCart(i)}
