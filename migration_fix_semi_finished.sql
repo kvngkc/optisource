@@ -1,3 +1,12 @@
+-- 0. Update Constraints to allow new spec types
+ALTER TABLE global_products DROP CONSTRAINT IF EXISTS global_products_spec_type_check;
+ALTER TABLE global_products ADD CONSTRAINT global_products_spec_type_check
+  CHECK (spec_type IN ('sph_add', 'sph_cyl', 'sph_cyl_axis_add', 'name_only', 'base_add', 'base_only'));
+
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_spec_type_check;
+ALTER TABLE products ADD CONSTRAINT products_spec_type_check
+  CHECK (spec_type IN ('sph_add', 'sph_cyl', 'sph_cyl_axis_add', 'name_only', 'base_add', 'base_only'));
+
 -- 1. Fix Global Products Spec Types
 UPDATE global_products
 SET spec_type = 'base_add'

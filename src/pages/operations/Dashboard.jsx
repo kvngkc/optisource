@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
+import OnboardingWizard from '../../components/OnboardingWizard'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend
@@ -19,6 +20,7 @@ function StatCard({ label, value, sub, color = 'text-slate-800' }) {
 
 export default function Dashboard() {
   const { profile } = useAuth()
+  const [setupState, setSetupState]     = useState({ locations: 0, products: 0, stock: 0 })
   const [todayStats, setTodayStats]     = useState({ revenue: 0, units: 0, sales: 0, outstanding: 0 })
   const [revenueChart, setRevenueChart] = useState([])
   const [topProducts, setTopProducts]   = useState([])
@@ -34,6 +36,15 @@ export default function Dashboard() {
 
   async function loadAll() {
     setLoading(true)
+    
+    // Check onboarding states
+    const [ {count: locCount}, {count: prodCount}, {count: stockCount} ] = await Promise.all([
+      supabase.from('locations').select('*', { count: 'exact', head: true }).eq('company_id', profile.company_id),
+      supabase.from('products').select('*', { count: 'exact', head: true }).eq('company_id', profile.company_id).eq('is_active', true),
+      supabase.from('stock').select('*', { count: 'exact', head: true }).eq('company_id', profile.company_id)
+    ])
+    setSetupState({ locations: locCount || 0, products: prodCount || 0, stock: stockCount || 0 })
+
     await Promise.all([
       loadTodayStats(),
       loadRevenueChart(),
@@ -145,6 +156,10 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="max-w-5xl mx-auto px-4 py-6 lg:px-6 lg:py-8">
+        {!loading && (setupState.locations === 0 || setupState.products === 0 || setupState.stock === 0) && (
+          <OnboardingWizard setupState={setupState} onComplete={loadAll} />
+        )}
+
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>

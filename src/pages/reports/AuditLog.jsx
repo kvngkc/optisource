@@ -31,7 +31,7 @@ export default function AuditLog() {
   async function fetchLogs(pageNum) {
     setLoading(true)
     let query = supabase.from('audit_log')
-      .select('*, profiles(full_name)')
+      .select('*, profiles(full_name, role)')
       .eq('company_id', profile.company_id)
       .order('created_at', { ascending: false })
       .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1)
@@ -108,8 +108,11 @@ export default function AuditLog() {
                           {log.status}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-sm text-slate-600">
-                        {log.profiles?.full_name || '—'}
+                      <td className="px-5 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm text-slate-700 font-medium">{log.profiles?.full_name || '—'}</span>
+                          {log.profiles?.role && <span className="text-xs text-slate-400 capitalize">{log.profiles.role.replace('_', ' ')}</span>}
+                        </div>
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-400 font-mono max-w-xs">
                         {log.details ? (

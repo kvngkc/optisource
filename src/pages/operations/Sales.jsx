@@ -334,7 +334,7 @@ export default function Sales() {
                     </select>
                   </div>
                 )}
-                {(specType === 'sph_add' || specType === 'sph_cyl_axis_add') && (
+                {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
                     <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>

@@ -220,10 +220,23 @@ async function validateRows(rawRows, tpl, companyId) {
 
     if (!productName)           errors.push('Missing product name')
     else if (!product)          errors.push(`"${productName}" not found — add it in My Products first`)
+    else if (product.spec_type !== tpl.spec_type) {
+      if ((tpl.spec_type.startsWith('base_') && !product.spec_type.startsWith('base_')) || (!tpl.spec_type.startsWith('base_') && product.spec_type.startsWith('base_')) || product.spec_type === 'name_only' || tpl.spec_type === 'name_only') {
+        errors.push(`Category mismatch: "${product.name}" requires ${product.spec_type} template, but you used ${tpl.label}.`)
+      }
+    }
+    
     if (!locationCode)          errors.push('Missing location code')
     else if (!location)         errors.push(`Location "${locationCode}" not in your list`)
     if (isNaN(qty) || qty <= 0) errors.push('Qty must be a positive number')
     if (product)                warnings.push(`Adds to existing product "${product.name}"`)
+
+    // Format autocorrect for base values (+200 -> 200)
+    if (tpl.spec_type.startsWith('base_') && row[tpl.sphKey] && row[tpl.sphKey].startsWith('+')) {
+      const oldVal = row[tpl.sphKey]
+      row[tpl.sphKey] = oldVal.replace('+', '')
+      warnings.push(`Auto-formatted base from "${oldVal}" to "${row[tpl.sphKey]}"`)
+    }
 
     return {
       rowNum: i + 2,
@@ -1016,6 +1029,15 @@ export default function Products() {
                       className="w-full px-4 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900">
                       {Object.entries(SPEC_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
+                    <p className="text-xs text-slate-500 mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2 leading-relaxed">
+                      <span className="text-blue-500 font-bold mr-1 block mb-0.5">ⓘ Staff Guide:</span>
+                      {form.spec_type === 'sph_add' && "Typically for standard Finished Lenses tracking only SPH and Addition."}
+                      {form.spec_type === 'sph_cyl' && "Single vision Finished Lenses tracking both SPH and CYL."}
+                      {form.spec_type === 'sph_cyl_axis_add' && "Complex lenses requiring full Rx variants: SPH, CYL, Axis, and Addition."}
+                      {form.spec_type === 'base_only' && "Semi-finished blanks tracked purely by their Base Curve."}
+                      {form.spec_type === 'base_add' && "Semi-finished blanks tracked by Base Curve AND Addition."}
+                      {form.spec_type === 'name_only' && "Utility items (Frames, solutions, cases). Tracked only by total physical quantity."}
+                    </p>
                   </div>
                 </div>
                 <button type="submit" disabled={loading}

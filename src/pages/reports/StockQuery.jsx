@@ -83,9 +83,10 @@ function StaffQuery({ profile }) {
   const [results, setResults]     = useState([])
   const [searched, setSearched]   = useState(false)
   const [loading, setLoading]     = useState(false)
+  const [visibleLimit, setVisibleLimit] = useState(50)
   const [form, setForm] = useState({
     class_id: '', product_id: '', location_id: 'all',
-    sph: 'Plano', cyl: '+000', axis: '90', addition: '+100',
+    sph: 'all', cyl: 'all', axis: 'all', addition: 'all',
   })
 
   const selectedProduct = products.find(p => p.id === form.product_id)
@@ -112,12 +113,8 @@ function StaffQuery({ profile }) {
   // Reset sph default when product/spec type changes
   useEffect(() => {
     if (!selectedProduct) return
-    if (specType.startsWith('base_')) {
-      setForm(f => ({ ...f, sph: '+100', cyl: '+000' }))
-    } else {
-      setForm(f => ({ ...f, sph: 'Plano' }))
-    }
-    setResults([]); setSearched(false)
+    setForm(f => ({ ...f, sph: 'all', cyl: 'all', axis: 'all', addition: 'all' }))
+    setResults([]); setSearched(false); setVisibleLimit(50)
   }, [form.product_id])
 
   function update(f, v) { setForm(p => ({ ...p, [f]: v })) }
@@ -135,14 +132,14 @@ function StaffQuery({ profile }) {
 
   async function handleSearch(e) {
     e.preventDefault(); if (!form.product_id) return
-    setLoading(true); setSearched(true)
+    setLoading(true); setSearched(true); setVisibleLimit(50)
     const specs = getSpecs()
     let q = supabase.from('stock').select('qty, allocated_qty, sph, cyl, axis, addition, name_key, location_id, locations(name, code)').eq('product_id', form.product_id).eq('company_id', profile.company_id).gt('qty', 0)
     if (form.location_id !== 'all') q = q.eq('location_id', form.location_id)
     q = buildStockQuery(q, specs)
     const { data: rows } = await q
     const formatted = (rows || []).map(s => ({ location: s.locations?.code || '—', spec: buildSpec(s), qty: s.qty, available: s.qty - (s.allocated_qty || 0) }))
-    formatted.sort((a, b) => a.location.localeCompare(b.location))
+    formatted.sort((a, b) => a.location.localeCompare(b.location) || a.spec.localeCompare(b.spec))
     setResults(formatted); setLoading(false)
   }
 
@@ -173,18 +170,28 @@ function StaffQuery({ profile }) {
           {!isUtility && selectedProduct && (
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">{specType.startsWith('base_') ? 'Base' : 'SPH'}</label>
-                <select value={specType.startsWith('base_') ? form.sph.replace('+', '') : form.sph} onChange={e => update('sph', specType.startsWith('base_') ? dbFormatBase(e.target.value) : e.target.value)} className={sc}>
+                <select value={specType.startsWith('base_') && form.sph !== 'all' ? form.sph.replace('+', '') : form.sph} onChange={e => update('sph', specType.startsWith('base_') && e.target.value !== 'all' ? dbFormatBase(e.target.value) : e.target.value)} className={sc}>
+                  <option value="all">Any {specType.startsWith('base_') ? 'Base' : 'SPH'}</option>
                   {(specType.startsWith('base_') ? BASE_VALUES : SPH_VALUES).map(v => <option key={v}>{v}</option>)}
                 </select></div>
               {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">CYL</label>
-                  <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>{CYL_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+                  <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>
+                    <option value="all">Any CYL</option>
+                    {CYL_VALUES.map(v => <option key={v}>{v}</option>)}
+                  </select></div>)}
               {specType === 'sph_cyl_axis_add' && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Axis</label>
-                  <select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>{AXIS_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+                  <select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>
+                    <option value="all">Any Axis</option>
+                    {AXIS_VALUES.map(v => <option key={v}>{v}</option>)}
+                  </select></div>)}
               {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
-                  <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+                  <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>
+                    <option value="all">Any Addition</option>
+                    {ADD_VALUES.map(v => <option key={v}>{v}</option>)}
+                  </select></div>)}
             </div>)}
           <button type="submit" disabled={loading || !form.product_id}
             className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-40">
@@ -201,7 +208,7 @@ function StaffQuery({ profile }) {
             <p className="text-xs text-slate-400">{totalAvailable} available ({totalQty} total)</p>
           </div>
           <div className="divide-y divide-slate-100">
-            {results.map((r, i) => (
+            {results.slice(0, visibleLimit).map((r, i) => (
               <div key={i} className="px-4 py-3.5 flex items-center justify-between">
                 <div><p className="text-sm font-medium text-slate-900">{r.spec}</p><p className="text-xs text-slate-400 mt-0.5">{r.location}</p></div>
                 <div className="text-right">
@@ -210,6 +217,13 @@ function StaffQuery({ profile }) {
                 </div>
               </div>))}
           </div>
+          {results.length > visibleLimit && (
+            <div className="px-4 py-3 border-t border-slate-100 bg-white">
+              <button onClick={() => setVisibleLimit(v => v + 50)} className="w-full py-2 bg-slate-100 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-200 transition-colors">
+                Load more ({results.length - visibleLimit} remaining)
+              </button>
+            </div>
+          )}
           {totalQty > 0 && <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex justify-between"><span className="text-sm font-semibold text-slate-700">Total Available</span><span className="text-sm font-bold text-slate-900">{totalAvailable}</span></div>}
         </div>))}
     </>
