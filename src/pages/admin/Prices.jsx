@@ -9,14 +9,14 @@ export default function Prices() {
   const [tab, setTab] = useState('exact')
 
   // Shared state
-  const [classes, setClasses]   = useState([])
+  const [classes, setClasses] = useState([])
   const [products, setProducts] = useState([])
-  const [filterProduct, setFP]  = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [msg, setMsg]           = useState({ type: '', text: '' })
+  const [filterProduct, setFP] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState({ type: '', text: '' })
 
   // Exact/Base prices state
-  const [prices, setPrices]     = useState([])
+  const [prices, setPrices] = useState([])
   const [form, setForm] = useState({
     class_id: '', product_id: '',
     sph: 'All', cyl: 'All', addition: 'All',
@@ -24,7 +24,7 @@ export default function Prices() {
   })
 
   // Range prices state
-  const [ranges, setRanges]     = useState([])
+  const [ranges, setRanges] = useState([])
   const [rForm, setRForm] = useState({
     class_id: '', product_id: '',
     sph_min: '', sph_max: '',
@@ -80,9 +80,9 @@ export default function Prices() {
   function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000) }
 
   const selectedProduct = products.find(p => p.id === form.product_id)
-  const specType  = selectedProduct?.spec_type || 'sph_add'
+  const specType = selectedProduct?.spec_type || 'sph_add'
   const isUtility = specType === 'name_only'
-  const usesBase  = specType.startsWith('base_')
+  const usesBase = specType.startsWith('base_')
 
   async function savePrice(e) {
     e.preventDefault()
@@ -92,12 +92,12 @@ export default function Prices() {
     const payload = {
       company_id: profile.company_id,
       product_id: form.product_id,
-      sph:      isUtility ? null : getVal(form.sph, usesBase),
-      cyl:      isUtility ? null : (specType === 'sph_add' || specType === 'base_add' ? null : getVal(form.cyl, false)),
-      axis:     null,
+      sph: isUtility ? null : getVal(form.sph, usesBase),
+      cyl: isUtility ? null : (specType === 'sph_add' || specType === 'base_add' ? null : getVal(form.cyl, false)),
+      axis: null,
       addition: isUtility ? null : (specType === 'sph_cyl' || specType === 'base_only' ? null : getVal(form.addition, false)),
       name_key: isUtility ? selectedProduct?.name : null,
-      price:    Number(form.price),
+      price: Number(form.price),
     }
     const { error } = await supabase.from('product_prices').upsert(payload, {
       onConflict: 'company_id,product_id,sph,cyl,axis,addition,name_key'
@@ -127,17 +127,13 @@ export default function Prices() {
   }
 
   async function deletePrice(id) {
-    if (!window.confirm('Delete this price?')) return
-    const { error } = await supabase.from('product_prices').delete().eq('id', id)
-    if (error) flash('error', error.message)
-    else { flash('success', 'Price deleted'); fetchPrices() }
+    await supabase.from('product_prices').delete().eq('id', id)
+    fetchPrices()
   }
 
   async function deleteRange(id) {
-    if (!window.confirm('Delete this range?')) return
-    const { error } = await supabase.from('product_price_ranges').delete().eq('id', id)
-    if (error) flash('error', error.message)
-    else { flash('success', 'Range deleted'); fetchRanges() }
+    await supabase.from('product_price_ranges').delete().eq('id', id)
+    fetchRanges()
   }
 
   const sc = "w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white text-base"

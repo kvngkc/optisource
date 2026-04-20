@@ -39,7 +39,7 @@ Lenses are extremely specific. The system handles standard spherical formats and
 ## 5. Main Data & UI Workflows
 
 ### The Optician Order Workflow
-1. An unregistered Optician arrives at `StockQuery.jsx` (public route).
+1. A registered Optician arrives at `StockQuery.jsx`.
 2. They input a specific Company's `slug` (access code). If the Supplier toggled "Optician Access" ON via Settings, the optician connects.
 3. The optician freely queries lens combinations. Availability translates to Checkmarks (stock quantities are legally hidden from competitors).
 4. Utilizing the internal LocalStorage Cart, the Optician compiles a batch of lenses and hits Order.

@@ -822,6 +822,20 @@ export default function Products() {
     if (profile?.company_id) { fetchClasses(); fetchProducts(); fetchCatalogue() }
   }, [profile])
 
+  // Automatically suggest 'base_add' spec type if the selected or typed class is Semi-finished
+  useEffect(() => {
+    let nameToCheck = ''
+    if (isCreatingClass) {
+      nameToCheck = form.new_class
+    } else if (form.class_id) {
+      nameToCheck = classes.find(c => c.id === form.class_id)?.name || ''
+    }
+    const isSemi = nameToCheck.toLowerCase().includes('semi') || nameToCheck.toLowerCase().includes('blank')
+    if (isSemi && form.spec_type === 'sph_add') {
+      setForm(f => ({ ...f, spec_type: 'base_add' }))
+    }
+  }, [form.class_id, form.new_class, isCreatingClass, classes])
+
   async function fetchClasses() {
     const { data } = await supabase.from('product_classes').select('*')
       .eq('company_id', profile.company_id).order('name')
