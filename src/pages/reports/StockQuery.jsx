@@ -9,11 +9,11 @@ import { resolvePrice } from '../../utils/pricing'
 
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
   let q = base
-  sph      === null ? q = q.is('sph', null)      : q = q.eq('sph', sph)
-  cyl      === null ? q = q.is('cyl', null)      : q = q.eq('cyl', cyl)
-  axis     === null ? q = q.is('axis', null)     : q = q.eq('axis', axis)
-  addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition)
-  name_key === null ? q = q.is('name_key', null) : q = q.eq('name_key', name_key)
+  if (sph !== 'all')      { sph      === null ? q = q.is('sph', null)      : q = q.eq('sph', sph) }
+  if (cyl !== 'all')      { cyl      === null ? q = q.is('cyl', null)      : q = q.eq('cyl', cyl) }
+  if (axis !== 'all')     { axis     === null ? q = q.is('axis', null)     : q = q.eq('axis', axis) }
+  if (addition !== 'all') { addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition) }
+  if (name_key !== 'all') { name_key === null ? q = q.is('name_key', null) : q = q.eq('name_key', name_key) }
   return q
 }
 
@@ -49,6 +49,11 @@ function formatSpec(spec) {
   if (spec.axis && spec.axis !== '-') parts.push(`ax${spec.axis}`)
   if (spec.addition && spec.addition !== '-') parts.push(`add${spec.addition}`)
   return parts.join(' / ') || '—'
+}
+
+function buildSpec(s) {
+  if (s.name_key) return s.name_key
+  return [s.sph, s.cyl && s.cyl !== '-' ? s.cyl : '', s.axis && s.axis !== '-' ? 'ax'+s.axis : '', s.addition && s.addition !== '-' ? 'add'+s.addition : ''].filter(Boolean).join(' / ') || '—'
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -141,10 +146,7 @@ function StaffQuery({ profile }) {
     setResults(formatted); setLoading(false)
   }
 
-  function buildSpec(s) {
-    if (s.name_key) return s.name_key
-    return [s.sph, s.cyl && s.cyl !== '-' ? s.cyl : '', s.axis && s.axis !== '-' ? 'ax'+s.axis : '', s.addition && s.addition !== '-' ? 'add'+s.addition : ''].filter(Boolean).join(' / ') || '—'
-  }
+  function update(f, v) { setForm(p => ({ ...p, [f]: v })) }
 
   const totalQty = results.reduce((s, r) => s + r.qty, 0)
   const totalAvailable = results.reduce((s, r) => s + r.available, 0)
@@ -229,11 +231,11 @@ function OpticianQuery({ profile }) {
 
   const [classes, setClasses]   = useState([])
   const [products, setProducts] = useState([])
-  const [form, setForm] = useState({ class_id: '', product_id: '', sph: 'Plano', cyl: '+000', axis: '90', addition: '+100' })
+  const [form, setForm] = useState({ class_id: '', product_id: '', sph: 'all', cyl: 'all', axis: 'all', addition: 'all' })
   const [results, setResults]   = useState([])
   const [searched, setSearched] = useState(false)
   const [loading, setLoading]   = useState(false)
-  const [addQty, setAddQty]     = useState(1)
+  const [addQty, setAddQty]     = useState({})
 
   // ── Cart state ───────────────────────────────────────────────
   const [cart, setCart]         = useState([])
@@ -327,26 +329,41 @@ function OpticianQuery({ profile }) {
     e.preventDefault(); if (!form.product_id || !supplier) return
     setLoading(true); setSearched(true)
     const specs = getSpecs()
-    let stockQ = supabase.from('stock').select('product_id, company_id, qty, allocated_qty').eq('product_id', form.product_id).eq('company_id', supplier.id).gt('qty', 0)
+    const hasAny = Object.values(specs).some(v => v === 'all')
+    let stockQ = supabase.from('stock').select('product_id, company_id, qty, allocated_qty, sph, cyl, axis, addition, name_key').eq('product_id', form.product_id).eq('company_id', supplier.id).gt('qty', 0)
     stockQ = buildStockQuery(stockQ, specs)
     const { data: stockRows } = await stockQ
-    const isInStock = (stockRows || []).some(s => (s.qty - (s.allocated_qty || 0)) > 0)
-    const res = isInStock ? 'in_stock' : 'out_of_stock'
-    setResults([{ product: selectedProduct?.name || '—', available: isInStock, specs }])
+    
+    if (hasAny) {
+      const resultsMap = new Map()
+      const validRows = (stockRows || []).filter(s => (s.qty - (s.allocated_qty || 0)) > 0)
+      for (const r of validRows) {
+        const specStr = buildSpec(r)
+        if (!resultsMap.has(specStr)) {
+          resultsMap.set(specStr, { product: selectedProduct?.name || '—', available: true, specs: { sph: r.sph, cyl: r.cyl, axis: r.axis, addition: r.addition, name_key: r.name_key } })
+        }
+      }
+      setResults(Array.from(resultsMap.values()).sort((a,b) => formatSpec(a.specs).localeCompare(formatSpec(b.specs))))
+    } else {
+      const isInStock = (stockRows || []).some(s => (s.qty - (s.allocated_qty || 0)) > 0)
+      setResults([{ product: selectedProduct?.name || '—', available: isInStock, specs }])
+    }
 
     // Log query
     await supabase.from('optician_query_log').insert({
       company_id: supplier.id, optician_id: profile?.id || null,
       optician_name: profile?.full_name || 'Unknown',
-      product_name: selectedProduct?.name || null, spec_details: specs, result: res,
+      product_name: selectedProduct?.name || null, spec_details: specs, result: (stockRows?.length > 0 ? 'in_stock' : 'out_of_stock'),
     })
-    setAddQty(1)
+    setAddQty({})
     setLoading(false)
   }
 
-  async function addToCart() {
-    if (!results[0]?.available) return
-    const specs = results[0].specs
+  async function addToCart(index) {
+    const result = results[index]
+    if (!result?.available) return
+    const specs = result.specs
+    const qty = addQty[index] || 1
 
     // Fetch price leveraging exact, range, and base fallback logic
     const unitPrice = await resolvePrice(form.product_id, supplier.id, specs)
@@ -355,12 +372,12 @@ function OpticianQuery({ profile }) {
     const key = `${form.product_id}||${JSON.stringify(specs)}`
     const existing = cart.find(c => c.key === key)
     if (existing) {
-      setCart(prev => prev.map(c => c.key === key ? { ...c, qty: c.qty + Number(addQty), subtotal: unitPrice != null ? (c.qty + Number(addQty)) * unitPrice : null } : c))
+      setCart(prev => prev.map(c => c.key === key ? { ...c, qty: c.qty + Number(qty), subtotal: unitPrice != null ? (c.qty + Number(qty)) * unitPrice : null } : c))
     } else {
       setCart(prev => [...prev, {
         key, product_id: form.product_id, product_name: selectedProduct?.name,
-        spec_details: specs, qty: Number(addQty),
-        unit_price: unitPrice, subtotal: unitPrice != null ? Number(addQty) * unitPrice : null,
+        spec_details: specs, qty: Number(qty),
+        unit_price: unitPrice, subtotal: unitPrice != null ? Number(qty) * unitPrice : null,
       }])
     }
     
@@ -589,12 +606,13 @@ function OpticianQuery({ profile }) {
           {!isUtility && selectedProduct && (
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">{specType.startsWith('base_') ? 'Base' : 'SPH'}</label>
-                <select value={specType.startsWith('base_') ? form.sph.replace('+', '') : form.sph} onChange={e => update('sph', specType.startsWith('base_') ? dbFormatBase(e.target.value) : e.target.value)} className={sc}>
+                <select value={specType.startsWith('base_') && form.sph !== 'all' ? form.sph.replace('+', '') : form.sph} onChange={e => update('sph', specType.startsWith('base_') && e.target.value !== 'all' ? dbFormatBase(e.target.value) : e.target.value)} className={sc}>
+                  <option value="all">Any {specType.startsWith('base_') ? 'Base' : 'SPH'}</option>
                   {(specType.startsWith('base_') ? BASE_VALUES : SPH_VALUES).map(v => <option key={v}>{v}</option>)}
                 </select></div>
-              {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">CYL</label><select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>{CYL_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
-              {specType === 'sph_cyl_axis_add' && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Axis</label><select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>{AXIS_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
-              {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label><select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+              {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">CYL</label><select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}><option value="all">Any CYL</option>{CYL_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+              {specType === 'sph_cyl_axis_add' && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Axis</label><select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}><option value="all">Any Axis</option>{AXIS_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+              {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label><select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}><option value="all">Any Addition</option>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
             </div>)}
           <button type="submit" disabled={loading || !form.product_id}
             className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-40">
@@ -607,10 +625,16 @@ function OpticianQuery({ profile }) {
       {searched && !loading && results.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden mb-6">
           <div className="px-4 py-3 border-b border-slate-100"><p className="text-xs text-slate-400">Result</p></div>
-          {results.map((r, i) => (
+          {results.map((r, i) => {
+            const qty = addQty[i] || 1
+            return (
             <div key={i} className="px-4 py-4">
               <div className="flex items-center gap-3 mb-4">
-                <div className="flex-1 min-w-0"><p className="text-sm font-medium text-slate-900 truncate">{r.product}</p><p className="text-xs text-slate-400 mt-0.5">{supplier?.name}</p></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">{r.product}</p>
+                  {formatSpec(r.specs) !== '—' && <p className="text-xs font-mono text-slate-500 mt-0.5">{formatSpec(r.specs)}</p>}
+                  <p className="text-xs text-slate-400 mt-0.5">{supplier?.name}</p>
+                </div>
                 <span className={`flex-shrink-0 text-xs font-semibold px-3 py-1 rounded-full ${r.available ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
                   {r.available ? '✓ In stock' : 'Out of stock'}
                 </span>
@@ -618,19 +642,21 @@ function OpticianQuery({ profile }) {
               {r.available && (
                 <div className="flex items-center gap-2">
                   <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden">
-                    <button type="button" onClick={() => setAddQty(q => Math.max(1, q - 1))}
+                    <button type="button" onClick={() => setAddQty(curr => ({ ...curr, [i]: Math.max(1, qty - 1) }))}
                       className="px-3 py-2 text-slate-500 hover:bg-slate-50 text-base font-bold">−</button>
-                    <input type="number" min="1" value={addQty} onChange={e => setAddQty(Math.max(1, Number(e.target.value)))}
+                    <input type="number" min="1" value={qty} onChange={e => setAddQty(curr => ({ ...curr, [i]: Math.max(1, Number(e.target.value)) }))}
                       className="w-12 text-center py-2 text-sm font-semibold text-slate-900 focus:outline-none" />
-                    <button type="button" onClick={() => setAddQty(q => q + 1)}
+                    <button type="button" onClick={() => setAddQty(curr => ({ ...curr, [i]: qty + 1 }))}
                       className="px-3 py-2 text-slate-500 hover:bg-slate-50 text-base font-bold">+</button>
                   </div>
-                  <button onClick={addToCart}
+                  <button onClick={() => addToCart(i)}
                     className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors ${toast ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-900 hover:bg-slate-800'}`}>
                     {toast || 'Add to cart'}
                   </button>
                 </div>)}
-            </div>))}
+            </div>
+            )
+          })}
           <div className="px-4 py-3 border-t border-slate-100 bg-slate-50"><p className="text-xs text-slate-400 text-center">Quantities are hidden to protect supplier privacy.</p></div>
         </div>)}
 
