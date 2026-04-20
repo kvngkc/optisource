@@ -550,7 +550,15 @@ function OpticianQuery({ profile }) {
           </div>
           {codeError && <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{codeError}</div>}
         </form>
-        <p className="mt-5 text-xs text-slate-400 leading-relaxed">💡 Quantities are never shown — only availability. You can order directly after checking.</p>
+        <div className="mt-5 space-y-2">
+          <p className="text-xs text-slate-400 leading-relaxed">💡 Quantities are never shown — only availability. You can order directly after checking.</p>
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+            <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              <strong>Privacy notice:</strong> Company codes shared with you are confidential. You must not forward or share a supplier's code with any third party unless the supplier has explicitly authorized it.
+            </p>
+          </div>
+        </div>
       </div>
     </>
   )

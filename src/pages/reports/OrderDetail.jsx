@@ -43,6 +43,7 @@ export default function OrderDetail() {
   const [loading, setLoading]   = useState(true)
   const [msgText, setMsgText]   = useState('')
   const [imageFile, setImageFile] = useState(null)
+  const [imageError, setImageError] = useState('')
   const [sending, setSending]   = useState(false)
   const [actioning, setActioning] = useState(false)
   const [locations, setLocations] = useState([])
@@ -451,10 +452,41 @@ export default function OrderDetail() {
                 <button onClick={() => setImageFile(null)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
               </div>
             )}
+            {imageError && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                {imageError}
+                <button onClick={() => setImageError('')} className="ml-auto text-red-400 hover:text-red-600 font-bold">✕</button>
+              </div>
+            )}
             <form onSubmit={sendMessage} className="flex gap-2 items-center">
               <label className="cursor-pointer p-3 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors shrink-0 flex items-center justify-center">
                 <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                <input type="file" className="hidden" accept="image/*" onChange={e => setImageFile(e.target.files[0])} />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={e => {
+                    const file = e.target.files[0]
+                    e.target.value = ''
+                    if (!file) return
+                    // Strict MIME type whitelist
+                    const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+                    // Strict extension whitelist
+                    const ext = file.name.split('.').pop().toLowerCase()
+                    const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+                    if (!ALLOWED_MIME.includes(file.type) || !ALLOWED_EXT.includes(ext)) {
+                      setImageError('Only JPG, PNG, WebP, or GIF images are allowed.')
+                      return
+                    }
+                    if (file.size > 20 * 1024 * 1024) {
+                      setImageError('File is too large. Maximum size is 20 MB.')
+                      return
+                    }
+                    setImageError('')
+                    setImageFile(file)
+                  }}
+                />
               </label>
               <input
                 type="text"
