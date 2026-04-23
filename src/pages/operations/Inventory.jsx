@@ -279,6 +279,17 @@ function InventoryEntryTab({ profile, locations, classes }) {
   async function handleVoid(log) {
     if (!window.confirm(`Void this entry?\n\n${log.products?.name} +${log.qty} at ${log.locations?.code}\n\nThis will subtract ${log.qty} from stock.`)) return
     setVoiding(log.id)
+
+    // Idempotency guard: prevent double-void of the same transaction
+    const { data: existingVoid } = await supabase.from('transactions')
+      .select('id').eq('company_id', profile.company_id)
+      .eq('type', 'INVENTORY_VOID').ilike('notes', `%${log.id}%`)
+      .maybeSingle()
+    if (existingVoid) {
+      flash('error', 'This entry has already been voided.')
+      setVoiding(null); return
+    }
+
     const specs = { sph: log.sph, cyl: log.cyl, axis: log.axis, addition: log.addition, name_key: log.name_key }
     const base = supabase.from('stock').select('id, qty')
       .eq('product_id', log.product_id).eq('location_id', log.location_id)

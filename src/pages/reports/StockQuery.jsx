@@ -127,7 +127,7 @@ function StaffQuery({ profile }) {
     if (!form.class_id) return
     setResults([]); setSearched(false)
     supabase.from('products').select('*').eq('company_id', profile.company_id).eq('class_id', form.class_id).eq('is_active', true).order('name')
-      .then(({ data }) => { setProducts(data || []); setForm(f => ({ ...f, product_id: data?.[0]?.id || '' })) })
+      .then(({ data }) => { setProducts(data || []); setForm(f => ({ ...f, product_id: '' })) })
   }, [form.class_id])
 
   useEffect(() => { setResults([]); setSearched(false) }, [form.location_id])
@@ -182,11 +182,13 @@ function StaffQuery({ profile }) {
             </select></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Product class</label>
             <select value={form.class_id} onChange={e => update('class_id', e.target.value)} className={sc}>
+              <option value="">— Select class —</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
             <select value={form.product_id} onChange={e => update('product_id', e.target.value)} className={sc}>
-              {products.length === 0 ? <option value="">— no products —</option> : products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="">— Select product —</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select></div>
           {!isUtility && selectedProduct && (
             <div className="grid grid-cols-2 gap-3">
@@ -336,15 +338,10 @@ function OpticianQuery({ profile }) {
       .then(({ data }) => { setProducts(data || []); setForm(f => ({ ...f, product_id: data?.[0]?.id || '' })) })
   }, [form.class_id, supplier])
 
-  // Reset sph default when spec type changes
+  // When product changes in search mode, reset all spec filters to 'all' (show everything)
   useEffect(() => {
     if (!selectedProduct) return
-    if (specType.startsWith('base_')) {
-      // Default base sph to unsigned '100' (no leading +)
-      setForm(f => ({ ...f, sph: '100', cyl: '+000' }))
-    } else {
-      setForm(f => ({ ...f, sph: 'Plano' }))
-    }
+    setForm(f => ({ ...f, sph: 'all', cyl: 'all', axis: 'all', addition: 'all' }))
     setResults([]); setSearched(false)
   }, [form.product_id])
 
