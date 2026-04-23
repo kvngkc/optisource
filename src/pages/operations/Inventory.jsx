@@ -39,6 +39,7 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
         <div>
           <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Location</label>
           <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))} className={gs}>
+            <option value="">— Select location —</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
           </select>
         </div>
@@ -48,18 +49,20 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
         <div>
           <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Product class</label>
           <select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value }))} className={gs}>
+            <option value="">— Select class —</option>
             {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div>
           <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Product</label>
           <select value={form.product_id} onChange={e => setForm(f => ({ ...f, product_id: e.target.value }))} className={gs}>
+            <option value="">— Select product —</option>
             {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
       </div>
 
-      {!isUtility && (
+      {!isUtility && form.product_id && (
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>{usesBase ? 'Base' : 'SPH'}</label>
@@ -108,21 +111,20 @@ function InventoryEntryTab({ profile, locations, classes }) {
   const [loading, setLoading] = useState(false)
   const [voiding, setVoiding] = useState(null)
   const [msg, setMsg]         = useState({ type: '', text: '' })
+  const [logPage, setLogPage] = useState(0)
 
   useEffect(() => {
     if (form.class_id) fetchProducts(form.class_id)
   }, [form.class_id])
 
+  // Reset spec values to sensible defaults whenever product changes
   useEffect(() => {
-    if (classes.length && !form.class_id) setForm(f => ({ ...f, class_id: classes[0].id }))
-  }, [classes])
-
-  useEffect(() => {
-    if (locations.length && !form.location_id) {
-      const pref = profile?.location_id ? locations.find(l => l.id === profile.location_id) : null
-      setForm(f => ({ ...f, location_id: pref ? pref.id : locations[0].id }))
-    }
-  }, [locations])
+    if (!form.product_id) return
+    const product = products.find(p => p.id === form.product_id)
+    if (!product) return
+    const isBase = product.spec_type.startsWith('base_')
+    setForm(f => ({ ...f, sph: isBase ? '+100' : 'Plano', cyl: '-', axis: '-', addition: '-' }))
+  }, [form.product_id])
 
   useEffect(() => {
     if (profile?.company_id) fetchRecentLogs()
@@ -133,7 +135,7 @@ function InventoryEntryTab({ profile, locations, classes }) {
       .eq('company_id', profile.company_id).eq('class_id', classId)
       .eq('is_active', true).order('name')
     setProducts(data || [])
-    setForm(f => ({ ...f, product_id: data?.[0]?.id || '' }))
+    setForm(f => ({ ...f, product_id: '' }))
   }
 
   async function fetchRecentLogs() {
@@ -141,8 +143,9 @@ function InventoryEntryTab({ profile, locations, classes }) {
       .select('*, products(name, spec_type, class_id), locations(name, code)')
       .eq('company_id', profile.company_id)
       .eq('type', 'INVENTORY_ADD')
-      .order('created_at', { ascending: false }).limit(10)
+      .order('created_at', { ascending: false }).limit(100)
     setRecentLogs(data || [])
+    setLogPage(0)
   }
 
   function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000) }
@@ -152,18 +155,23 @@ function InventoryEntryTab({ profile, locations, classes }) {
   const isUtility = specType === 'name_only'
 
   function getSpecValues() {
+    if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name }
+    const isBase   = specType.startsWith('base_')
+    const usesCyl  = specType === 'sph_cyl' || specType === 'sph_cyl_axis_add'
+    const usesAxis = specType === 'sph_cyl_axis_add'
+    const usesAdd  = specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add'
     return {
-      sph:      isUtility ? null : form.sph,
-      cyl:      isUtility ? null : (specType === 'sph_add' ? null : form.cyl),
-      axis:     isUtility ? null : (specType === 'sph_cyl_axis_add' ? form.axis : null),
-      addition: isUtility ? null : (specType === 'sph_cyl' ? null : form.addition),
-      name_key: isUtility ? selectedProduct?.name : null,
+      sph:      form.sph || null,
+      cyl:      usesCyl  ? (form.cyl      && form.cyl      !== '-' ? form.cyl      : null) : null,
+      axis:     usesAxis ? (form.axis     && form.axis     !== '-' ? form.axis     : null) : null,
+      addition: usesAdd  ? (form.addition && form.addition !== '-' ? form.addition : null) : null,
+      name_key: null,
     }
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    const qty = Number(form.qty)
+    const qty = parseFloat(form.qty)
     if (!form.product_id || !form.location_id) { flash('error', 'Product and location required'); return }
     if (!qty || qty <= 0) { flash('error', 'Qty must be a positive number'); return }
     setLoading(true)
@@ -273,7 +281,7 @@ function InventoryEntryTab({ profile, locations, classes }) {
           />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
-            <input type="number" min="1" required
+            <input type="number" min="0.5" step="0.5" required
               value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
               placeholder="e.g. 50"
               className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
@@ -299,9 +307,22 @@ function InventoryEntryTab({ profile, locations, classes }) {
         <h3 className="font-semibold text-slate-700 text-sm">Recent additions</h3>
         <p className="text-xs text-slate-400">Tap a row to re-use · Void to reverse</p>
       </div>
+      {recentLogs.length > 0 && (
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-slate-400">
+            {Math.min(logPage * 20 + 1, recentLogs.length)}–{Math.min((logPage + 1) * 20, recentLogs.length)} of {recentLogs.length}
+          </p>
+          <div className="flex gap-1">
+            <button onClick={() => setLogPage(p => Math.max(0, p - 1))} disabled={logPage === 0}
+              className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50">‹ Prev</button>
+            <button onClick={() => setLogPage(p => Math.min(Math.ceil(recentLogs.length / 20) - 1, p + 1))} disabled={(logPage + 1) * 20 >= recentLogs.length}
+              className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50">Next ›</button>
+          </div>
+        </div>
+      )}
       <div className="space-y-2">
         {recentLogs.length === 0 && <p className="text-slate-400 text-sm">No entries yet.</p>}
-        {recentLogs.map(log => (
+        {recentLogs.slice(logPage * 20, (logPage + 1) * 20).map(log => (
           <div key={log.id}
             className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-center justify-between gap-3 hover:border-slate-400 cursor-pointer transition-colors group"
             onClick={() => prefillFromLog(log)}
@@ -345,10 +366,6 @@ function InventoryTransferTab({ profile, locations, classes }) {
   const [summary, setSummary]           = useState(null)
 
   useEffect(() => {
-    if (classes.length && !selForm.class_id) setSelForm(f => ({ ...f, class_id: classes[0].id }))
-  }, [classes])
-
-  useEffect(() => {
     if (selForm.class_id) fetchProducts(selForm.class_id)
   }, [selForm.class_id])
 
@@ -357,7 +374,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
       .eq('company_id', profile.company_id).eq('class_id', classId)
       .eq('is_active', true).order('name')
     setProducts(data || [])
-    setSelForm(f => ({ ...f, product_id: data?.[0]?.id || '' }))
+    setSelForm(f => ({ ...f, product_id: '' }))
   }
 
   function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 5000) }
@@ -367,12 +384,16 @@ function InventoryTransferTab({ profile, locations, classes }) {
   const isUtility = specType === 'name_only'
 
   function getSpecValues() {
+    if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name }
+    const usesCyl  = specType === 'sph_cyl' || specType === 'sph_cyl_axis_add'
+    const usesAxis = specType === 'sph_cyl_axis_add'
+    const usesAdd  = specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add'
     return {
-      sph:      isUtility ? null : selForm.sph,
-      cyl:      isUtility ? null : (specType === 'sph_add' ? null : selForm.cyl),
-      axis:     isUtility ? null : (specType === 'sph_cyl_axis_add' ? selForm.axis : null),
-      addition: isUtility ? null : (specType === 'sph_cyl' ? null : selForm.addition),
-      name_key: isUtility ? selectedProduct?.name : null,
+      sph:      selForm.sph || null,
+      cyl:      usesCyl  ? (selForm.cyl      && selForm.cyl      !== '-' ? selForm.cyl      : null) : null,
+      axis:     usesAxis ? (selForm.axis     && selForm.axis     !== '-' ? selForm.axis     : null) : null,
+      addition: usesAdd  ? (selForm.addition && selForm.addition !== '-' ? selForm.addition : null) : null,
+      name_key: null,
     }
   }
 
@@ -409,13 +430,13 @@ function InventoryTransferTab({ profile, locations, classes }) {
   }, [selForm.product_id, selForm.sph, selForm.cyl, selForm.axis, selForm.addition])
 
   // totals
-  const totalFrom = stockRows.reduce((sum, s) => sum + (parseInt(s.moveQty, 10) || 0), 0)
-  const totalTo   = toRows.reduce((sum, r)   => sum + (parseInt(r.qty,     10) || 0), 0)
+  const totalFrom = stockRows.reduce((sum, s) => sum + (parseFloat(s.moveQty) || 0), 0)
+  const totalTo   = toRows.reduce((sum, r)   => sum + (parseFloat(r.qty)     || 0), 0)
   const balanced  = totalFrom > 0 && totalFrom === totalTo
 
   // Auto-sync qty if there is only one destination
   useEffect(() => {
-    if (toRows.length === 1 && parseInt(toRows[0].qty || 0, 10) !== totalFrom) {
+    if (toRows.length === 1 && parseFloat(toRows[0].qty || 0) !== totalFrom) {
       setToRows(r => [{ ...r[0], qty: totalFrom ? String(totalFrom) : '' }])
     }
   }, [totalFrom, toRows.length])
@@ -436,11 +457,11 @@ function InventoryTransferTab({ profile, locations, classes }) {
   function validate() {
     const errors = []
     for (const s of stockRows) {
-      const qty = parseInt(s.moveQty, 10) || 0
+      const qty = parseFloat(s.moveQty) || 0
       if (qty < 0)              errors.push(`Negative qty at ${s.location_code}`)
       if (qty > s.available)    errors.push(`${s.location_code} only has ${s.available} units available`)
     }
-    const activeFromIds = stockRows.filter(s => parseInt(s.moveQty, 10) > 0).map(s => s.location_id)
+    const activeFromIds = stockRows.filter(s => (parseFloat(s.moveQty) || 0) > 0).map(s => s.location_id)
     for (const r of toRows) {
       if (!r.location_id)       errors.push('A destination location is not selected')
       if (activeFromIds.includes(r.location_id)) {
@@ -457,13 +478,13 @@ function InventoryTransferTab({ profile, locations, classes }) {
     if (errors.length) { flash('error', errors[0]); return }
     setLoading(true)
     const specs     = getSpecValues()
-    const fromNames = stockRows.filter(s => parseInt(s.moveQty, 10) > 0).map(s => s.location_code).join(', ')
+    const fromNames = stockRows.filter(s => (parseFloat(s.moveQty) || 0) > 0).map(s => s.location_code).join(', ')
     const toNames   = toRows.map(r => locations.find(l => l.id === r.location_id)?.code).join(', ')
 
     try {
       // ── DEBITS (source locations) ──
       for (const s of stockRows) {
-        const qty = parseInt(s.moveQty, 10) || 0
+        const qty = parseFloat(s.moveQty) || 0
         if (qty <= 0) continue
         await supabase.from('stock')
           .update({ qty: s.available - qty, updated_at: new Date() }).eq('id', s.stock_id)
@@ -482,7 +503,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
 
       // ── CREDITS (destination locations) ──
       for (const r of toRows) {
-        const qty = parseInt(r.qty, 10) || 0
+        const qty = parseFloat(r.qty) || 0
         if (!r.location_id || qty <= 0) continue
         let q = supabase.from('stock').select('id, qty')
           .eq('product_id', selForm.product_id).eq('location_id', r.location_id)
@@ -514,11 +535,11 @@ function InventoryTransferTab({ profile, locations, classes }) {
       setSummary({
         product:   selectedProduct?.name,
         totalMoved: totalFrom,
-        fromLocs: stockRows.filter(s => parseInt(s.moveQty, 10) > 0)
-          .map(s => ({ code: s.location_code, qty: parseInt(s.moveQty, 10) })),
+        fromLocs: stockRows.filter(s => (parseFloat(s.moveQty) || 0) > 0)
+          .map(s => ({ code: s.location_code, qty: parseFloat(s.moveQty) })),
         toLocs: toRows.map(r => ({
           code: locations.find(l => l.id === r.location_id)?.code,
-          qty: parseInt(r.qty, 10),
+          qty: parseFloat(r.qty),
         })),
       })
     } catch (e) {
@@ -611,7 +632,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
             ) : (
               <div className="space-y-3">
                 {stockRows.map(s => {
-                  const qty = parseInt(s.moveQty, 10) || 0
+                  const qty = parseFloat(s.moveQty) || 0
                   const overLimit = qty > s.available
                   return (
                     <div key={s.location_id} className={`flex items-center gap-3 p-3 rounded-xl border ${overLimit ? 'border-red-200 bg-red-50' : 'border-slate-100'}`}>
@@ -625,7 +646,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
                         </p>
                       </div>
                       <input
-                        type="number" min="0" max={s.available}
+                        type="number" min="0" step="0.5" max={s.available}
                         value={s.moveQty}
                         onChange={e => updateMoveQty(s.location_id, e.target.value)}
                         placeholder="0"
@@ -658,7 +679,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
                     <option value="">Pick destination…</option>
                     {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
                   </select>
-                  <input type="number" min="1"
+                  <input type="number" min="0.5" step="0.5"
                     value={r.qty} onChange={e => updateToRow(r._id, 'qty', e.target.value)}
                     placeholder="Qty"
                     readOnly={toRows.length === 1}
@@ -803,10 +824,10 @@ async function runInventoryImport(validatedRows, importMode, profile) {
       let q = buildImportStockQuery(supabase.from('stock').select('id, qty').eq('product_id', row.product.id).eq('location_id', row.location.id), row.specs)
       const { data: existing } = await q.maybeSingle()
       if (existing) {
-        const newQty = importMode === 'add' ? existing.qty + row.qty : row.qty
+        const newQty = importMode === 'add' ? existing.qty + Number(row.qty) : Number(row.qty)
         await supabase.from('stock').update({ qty: newQty, updated_at: new Date() }).eq('id', existing.id)
       } else {
-        await supabase.from('stock').insert({ company_id: profile.company_id, product_id: row.product.id, location_id: row.location.id, ...row.specs, qty: row.qty })
+        await supabase.from('stock').insert({ company_id: profile.company_id, product_id: row.product.id, location_id: row.location.id, ...row.specs, qty: Number(row.qty) })
       }
       await supabase.from('transactions').insert({ company_id: profile.company_id, type: 'INVENTORY_ADD', product_id: row.product.id, location_id: row.location.id, ...row.specs, qty: row.qty, created_by: profile.id, notes: 'Stock import' })
       imported++
@@ -867,7 +888,7 @@ function ImportDataTab({ profile }) {
     const locationMap = Object.fromEntries((locs || []).map(l => [l.code.toLowerCase().trim(), l]))
     return rows.map((row, i) => {
       const locationCode = (row.location_code || '').trim()
-      const qty = parseInt(row.qty, 10)
+      const qty = parseFloat(row.qty)
       const location = locationMap[locationCode.toLowerCase()]
       const errors = []
       if (!locationCode) errors.push('Missing location'); else if (!location) errors.push(`Location "${locationCode}" not found`)

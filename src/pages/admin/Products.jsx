@@ -213,7 +213,7 @@ async function validateRows(rawRows, tpl, companyId) {
   return rawRows.map((row, i) => {
     const productName  = (row.product_name  || '').trim()
     const locationCode = (row.location_code || '').trim()
-    const qty          = parseInt(row.qty, 10)
+    const qty          = parseFloat(row.qty)
     const product      = productMap[productName.toLowerCase()]
     const location     = locationMap[locationCode.toLowerCase()]
     const errors = [], warnings = []
@@ -262,12 +262,12 @@ async function runImport(validatedRows, importMode, profile) {
       q = buildStockQuery(q, row.specs)
       const { data: existing } = await q.maybeSingle()
       if (existing) {
-        const newQty = importMode === 'add' ? existing.qty + row.qty : row.qty
+        const newQty = importMode === 'add' ? existing.qty + Number(row.qty) : Number(row.qty)
         await supabase.from('stock').update({ qty: newQty, updated_at: new Date() }).eq('id', existing.id)
       } else {
         await supabase.from('stock').insert({
           company_id: profile.company_id, product_id: row.product.id,
-          location_id: row.location.id, ...row.specs, qty: row.qty,
+          location_id: row.location.id, ...row.specs, qty: Number(row.qty),
         })
       }
       await supabase.from('transactions').insert({
@@ -573,7 +573,7 @@ function ManualMode({ template, profile }) {
           )}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Qty</label>
-            <input type="number" min="1" value={qty}
+            <input type="number" min="0.5" step="0.5" value={qty}
               onChange={e => setQty(e.target.value)} onKeyDown={handleKeyDown}
               placeholder="50" className={SC} />
           </div>

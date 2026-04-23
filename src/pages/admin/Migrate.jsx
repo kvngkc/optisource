@@ -64,7 +64,7 @@ function downloadTemplate() {
 const COLUMN_GUIDE = [
   { col: 'product_name',  req: true,  note: 'Must exactly match a product name in your catalogue' },
   { col: 'location_code', req: true,  note: 'Must match a location code — e.g. STORE, SHOP1' },
-  { col: 'qty',           req: true,  note: 'A positive whole number' },
+  { col: 'qty',           req: true,  note: 'A positive number — decimals in steps of 0.5 are supported' },
   { col: 'sph',           req: false, note: 'e.g. Plano, +200, -025 — leave blank for name-only products' },
   { col: 'cyl',           req: false, note: 'e.g. -, -025, +050' },
   { col: 'axis',          req: false, note: 'e.g. -, 90, 180' },
@@ -135,7 +135,7 @@ export default function Migrate() {
     const validated = csvRows.map((row, i) => {
       const productName  = (row[productCol]  || '').trim()
       const locationCode = (row[locationCol] || '').trim()
-      const qty          = parseInt(row[qtyCol], 10)
+      const qty          = parseFloat(row[qtyCol])
       const product      = productMap[productName.toLowerCase()]
       const location     = locationMap[locationCode.toLowerCase()]
       const errs         = []
