@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
+import { sanitise } from '../../utils/sanitise'
 
 const METHODS = ['Cash', 'POS', 'Transfer']
 
@@ -61,7 +62,7 @@ export default function Debtors() {
       debtor_id:  selected.id,
       amount,
       method:     payForm.method,
-      notes:      payForm.notes || null,
+      notes:      payForm.notes ? sanitise(payForm.notes, 500) : null,
       created_by: profile.id,
     })
 

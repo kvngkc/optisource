@@ -10,8 +10,9 @@ export default function Staff() {
 
   const [staff,     setStaff]     = useState([])
   const [locations, setLocations] = useState([])
+  const [pendingOpticians, setPendingOpticians] = useState([])
   const [loading,   setLoading]   = useState(true)
-  const [saving,    setSaving]    = useState(null) // userId being saved
+  const [saving,    setSaving]    = useState(null)
   const [error,     setError]     = useState('')
   const [success,   setSuccess]   = useState('')
 
@@ -23,21 +24,29 @@ export default function Staff() {
 
   async function loadData() {
     setLoading(true)
-    const [staffRes, locRes] = await Promise.all([
+    const [staffRes, locRes, opticianRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, full_name, email, role, location_id, locations(name)')
         .eq('company_id', profile.company_id)
         .neq('id', profile.id)
+        .neq('role', 'optician')
         .order('full_name'),
       supabase
         .from('locations')
         .select('id, name, code')
         .eq('company_id', profile.company_id)
         .order('name'),
+      supabase
+        .from('profiles')
+        .select('id, full_name, email, created_at')
+        .eq('role', 'optician')
+        .eq('is_approved', false)
+        .order('created_at', { ascending: false }),
     ])
     if (!staffRes.error) setStaff(staffRes.data || [])
     if (!locRes.error)   setLocations(locRes.data || [])
+    if (!opticianRes.error) setPendingOpticians(opticianRes.data || [])
     setLoading(false)
   }
 
@@ -90,6 +99,23 @@ export default function Staff() {
     setSaving(null)
   }
 
+  async function approveOptician(id) {
+    setSaving(id)
+    await supabase.from('profiles').update({ is_approved: true }).eq('id', id)
+    setPendingOpticians(p => p.filter(o => o.id !== id))
+    setSuccess('Optician approved.')
+    setTimeout(() => setSuccess(''), 3000)
+    setSaving(null)
+  }
+
+  async function rejectOptician(id) {
+    if (!window.confirm('Reject and remove this optician account?')) return
+    setSaving(id)
+    await supabase.from('profiles').update({ is_approved: false, role: 'optician' }).eq('id', id)
+    setPendingOpticians(p => p.filter(o => o.id !== id))
+    setSaving(null)
+  }
+
   const pending = staff.filter(m => m.role === 'staff' && !m.location_id)
   const active  = staff.filter(m => m.location_id || m.role === 'optician' || m.role === 'manager')
 
@@ -125,6 +151,36 @@ export default function Staff() {
           <div className="text-center py-16 text-slate-400 text-sm">Loading staff…</div>
         ) : (
           <>
+            {/* Pending Opticians */}
+            {pendingOpticians.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-sm font-semibold text-slate-900">Pending optician approvals</h2>
+                  <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">{pendingOpticians.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {pendingOpticians.map(o => (
+                    <div key={o.id} className="bg-white border border-blue-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900">{o.full_name}</p>
+                        <p className="text-xs text-slate-500">{o.email} · Optician · Requested {new Date(o.created_at).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => approveOptician(o.id)} disabled={saving === o.id}
+                          className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50">
+                          Approve
+                        </button>
+                        <button onClick={() => rejectOptician(o.id)} disabled={saving === o.id}
+                          className="text-xs text-red-500 border border-red-200 px-3 py-1.5 rounded-lg font-semibold hover:bg-red-50 disabled:opacity-50">
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Pending staff */}
             {pending.length > 0 && (
               <div className="mb-6">

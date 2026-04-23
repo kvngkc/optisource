@@ -40,6 +40,28 @@ function saveCart(supplierId, items) {
   localStorage.setItem(cartKey(supplierId), JSON.stringify(items))
 }
 
+// ── Rate limiting helpers ─────────────────────────────────────
+const RATE_KEY = 'slug_rate_limit'
+function getRateData() {
+  try { return JSON.parse(localStorage.getItem(RATE_KEY) || '{"count":0,"lockUntil":0}') }
+  catch { return { count: 0, lockUntil: 0 } }
+}
+function recordFailedAttempt() {
+  const d = getRateData()
+  const now = Date.now()
+  const count = (d.lockUntil > now ? d.count : (now - (d.lastAttempt || 0) < 60000 ? d.count : 0)) + 1
+  const lockUntil = count >= 5 ? now + 60000 : d.lockUntil
+  localStorage.setItem(RATE_KEY, JSON.stringify({ count, lockUntil, lastAttempt: now }))
+  return { count, lockUntil }
+}
+function isRateLimited() {
+  const d = getRateData()
+  return d.lockUntil > Date.now()
+}
+function resetRateLimit() {
+  localStorage.setItem(RATE_KEY, JSON.stringify({ count: 0, lockUntil: 0 }))
+}
+
 function formatSpec(spec) {
   if (!spec) return '—'
   if (spec.name_key) return spec.name_key
@@ -83,7 +105,7 @@ function StaffQuery({ profile }) {
   const [results, setResults]     = useState([])
   const [searched, setSearched]   = useState(false)
   const [loading, setLoading]     = useState(false)
-  const [visibleLimit, setVisibleLimit] = useState(50)
+  const [resultPage, setResultPage] = useState(0)
   const [form, setForm] = useState({
     class_id: '', product_id: '', location_id: 'all',
     sph: 'all', cyl: 'all', axis: 'all', addition: 'all',
@@ -114,7 +136,7 @@ function StaffQuery({ profile }) {
   useEffect(() => {
     if (!selectedProduct) return
     setForm(f => ({ ...f, sph: 'all', cyl: 'all', axis: 'all', addition: 'all' }))
-    setResults([]); setSearched(false); setVisibleLimit(50)
+    setResults([]); setSearched(false)
   }, [form.product_id])
 
   function update(f, v) { setForm(p => ({ ...p, [f]: v })) }
@@ -132,7 +154,7 @@ function StaffQuery({ profile }) {
 
   async function handleSearch(e) {
     e.preventDefault(); if (!form.product_id) return
-    setLoading(true); setSearched(true); setVisibleLimit(50)
+    setLoading(true); setSearched(true); setResultPage(0)
     const specs = getSpecs()
     let q = supabase.from('stock').select('qty, allocated_qty, sph, cyl, axis, addition, name_key, location_id, locations(name, code)').eq('product_id', form.product_id).eq('company_id', profile.company_id).gt('qty', 0)
     if (form.location_id !== 'all') q = q.eq('location_id', form.location_id)
@@ -142,8 +164,6 @@ function StaffQuery({ profile }) {
     formatted.sort((a, b) => a.location.localeCompare(b.location) || a.spec.localeCompare(b.spec))
     setResults(formatted); setLoading(false)
   }
-
-  function update(f, v) { setForm(p => ({ ...p, [f]: v })) }
 
   const totalQty = results.reduce((s, r) => s + r.qty, 0)
   const totalAvailable = results.reduce((s, r) => s + r.available, 0)
@@ -208,7 +228,7 @@ function StaffQuery({ profile }) {
             <p className="text-xs text-slate-400">{totalAvailable} available ({totalQty} total)</p>
           </div>
           <div className="divide-y divide-slate-100">
-            {results.slice(0, visibleLimit).map((r, i) => (
+            {results.slice(resultPage * 20, (resultPage + 1) * 20).map((r, i) => (
               <div key={i} className="px-4 py-3.5 flex items-center justify-between">
                 <div><p className="text-sm font-medium text-slate-900">{r.spec}</p><p className="text-xs text-slate-400 mt-0.5">{r.location}</p></div>
                 <div className="text-right">
@@ -217,11 +237,17 @@ function StaffQuery({ profile }) {
                 </div>
               </div>))}
           </div>
-          {results.length > visibleLimit && (
-            <div className="px-4 py-3 border-t border-slate-100 bg-white">
-              <button onClick={() => setVisibleLimit(v => v + 50)} className="w-full py-2 bg-slate-100 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-200 transition-colors">
-                Load more ({results.length - visibleLimit} remaining)
-              </button>
+          {results.length > 20 && (
+            <div className="px-4 py-3 border-t border-slate-100 bg-white flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                {resultPage * 20 + 1}–{Math.min((resultPage + 1) * 20, results.length)} of {results.length} rows
+              </p>
+              <div className="flex gap-1">
+                <button onClick={() => setResultPage(p => Math.max(0, p - 1))} disabled={resultPage === 0}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50 font-medium">‹ Prev</button>
+                <button onClick={() => setResultPage(p => Math.min(Math.ceil(results.length / 20) - 1, p + 1))} disabled={(resultPage + 1) * 20 >= results.length}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50 font-medium">Next ›</button>
+              </div>
             </div>
           )}
           {totalQty > 0 && <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex justify-between"><span className="text-sm font-semibold text-slate-700">Total Available</span><span className="text-sm font-bold text-slate-900">{totalAvailable}</span></div>}
@@ -242,6 +268,22 @@ function OpticianQuery({ profile }) {
   const [codeError, setCodeError]   = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const historyRef = useRef(null)
+  const [rateLocked, setRateLocked] = useState(isRateLimited)
+  const [lockCountdown, setLockCountdown] = useState(0)
+
+  // Countdown timer when rate locked
+  useEffect(() => {
+    if (!rateLocked) return
+    const d = getRateData()
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((d.lockUntil - Date.now()) / 1000))
+      setLockCountdown(remaining)
+      if (remaining <= 0) { setRateLocked(false); resetRateLimit() }
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [rateLocked])
 
   const [classes, setClasses]   = useState([])
   const [products, setProducts] = useState([])
@@ -306,13 +348,29 @@ function OpticianQuery({ profile }) {
 
   async function handleConnect(e) {
     e.preventDefault()
+    if (rateLocked) return
     const code = codeInput.trim().toLowerCase()
     if (!code) return
     setConnecting(true); setCodeError('')
     const { data: company, error } = await supabase.from('companies').select('id, name, slug, optician_access').eq('slug', code).maybeSingle()
-    if (error || !company) { setCodeError('Company code not found. Please double-check and try again.'); setConnecting(false); return }
+    if (error || !company) {
+      const { lockUntil } = recordFailedAttempt()
+      if (lockUntil > Date.now()) {
+        setRateLocked(true)
+        setCodeError('Too many failed attempts. Please wait 60 seconds before trying again.')
+      } else {
+        setCodeError('Company code not found. Please double-check and try again.')
+      }
+      setConnecting(false); return
+    }
+    resetRateLimit()
     saveHistory(company.slug, company.name); setHistory(getHistory())
     setSupplier({ id: company.id, name: company.name, slug: company.slug })
+    // Check optician approval
+    if (profile?.id) {
+      const { data: prof } = await supabase.from('profiles').select('is_approved').eq('id', profile.id).single()
+      if (prof && prof.is_approved === false) { setScreen('pending_approval'); setConnecting(false); return }
+    }
     setScreen(company.optician_access ? 'search' : 'locked')
     setConnecting(false)
   }
@@ -532,9 +590,9 @@ function OpticianQuery({ profile }) {
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                   </button>)}
               </div>
-              <button type="submit" disabled={connecting || !codeInput.trim()}
+              <button type="submit" disabled={connecting || !codeInput.trim() || rateLocked}
                 className="bg-slate-900 text-white px-5 py-3 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50 whitespace-nowrap">
-                {connecting ? 'Connecting…' : 'Connect'}
+                {rateLocked ? `Wait ${lockCountdown}s` : connecting ? 'Connecting…' : 'Connect'}
               </button>
             </div>
             {showHistory && history.length > 0 && (
@@ -560,6 +618,22 @@ function OpticianQuery({ profile }) {
           </div>
         </div>
       </div>
+    </>
+  )
+
+  // ── SCREEN: PENDING APPROVAL ─────────────────────────────────
+  if (screen === 'pending_approval') return (
+    <>
+      <div className="mb-8"><h2 className="text-xl font-bold text-slate-800 mb-1">Stock query</h2><p className="text-slate-500 text-sm">Account verification</p></div>
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-10 text-center mb-4">
+        <div className="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg className="w-7 h-7 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        </div>
+        <h3 className="text-lg font-bold text-blue-900 mb-1">Pending approval</h3>
+        <p className="text-blue-700 text-sm font-medium mb-2">Your account is awaiting supplier approval</p>
+        <p className="text-blue-600 text-xs max-w-xs mx-auto leading-relaxed">Contact your supplier directly and ask them to approve your Optisource account. Once approved, you will be able to query their stock.</p>
+      </div>
+      <button onClick={resetToEntry} className="w-full border border-slate-200 text-slate-600 py-3 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">← Try a different supplier</button>
     </>
   )
 
@@ -646,7 +720,11 @@ function OpticianQuery({ profile }) {
       </div>
 
       {/* Result + add to cart */}
-      {searched && !loading && results.length > 0 && (
+      {searched && !loading && (results.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl px-6 py-10 text-center">
+          <p className="text-slate-400 text-sm">No stock found for this selection.</p>
+        </div>
+      ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden mb-6">
           <div className="px-4 py-3 border-b border-slate-100"><p className="text-xs text-slate-400">Result</p></div>
           {results.map((r, i) => {
@@ -682,7 +760,7 @@ function OpticianQuery({ profile }) {
             )
           })}
           <div className="px-4 py-3 border-t border-slate-100 bg-slate-50"><p className="text-xs text-slate-400 text-center">Quantities are hidden to protect supplier privacy.</p></div>
-        </div>)}
+        </div>))}
 
       {/* ── CART MODAL ── */}
       {showCart && (

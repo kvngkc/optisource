@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 
 export default function Settings() {
   const { profile } = useAuth()
+  const navigate = useNavigate()
   const [opticianAccess, setOpticianAccess] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving,  setSaving]  = useState(false)
   const [msg,     setMsg]     = useState({ type: '', text: '' })
+  const [signingOut, setSigningOut] = useState(false)
 
   // ── Bank accounts ──
   const [banks, setBanks]           = useState([])
@@ -94,6 +97,13 @@ export default function Settings() {
     await supabase.from('company_bank_accounts').update({ is_primary: false }).eq('company_id', profile.company_id)
     await supabase.from('company_bank_accounts').update({ is_primary: true }).eq('id', id)
     fetchBanks()
+  }
+
+  async function signOutAllDevices() {
+    if (!window.confirm('This will immediately sign you out on ALL devices\u2014including this one. Continue?')) return
+    setSigningOut(true)
+    await supabase.auth.signOut({ scope: 'global' })
+    navigate('/login')
   }
 
   if (loading) {
@@ -210,6 +220,19 @@ export default function Settings() {
               {savingBank ? 'Adding…' : '+ Add bank account'}
             </button>
           </form>
+        </div>
+
+        {/* ── Danger Zone ── */}
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5 mt-4">
+          <h2 className="text-sm font-semibold text-red-700 mb-1">Danger zone</h2>
+          <p className="text-xs text-red-500 mb-4 leading-relaxed">Signing out all devices immediately revokes all active sessions. Use this if you believe your account has been compromised or a device has been lost.</p>
+          <button
+            onClick={signOutAllDevices}
+            disabled={signingOut}
+            className="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            {signingOut ? 'Signing out…' : 'Sign out all devices'}
+          </button>
         </div>
       </div>
     </Layout>
