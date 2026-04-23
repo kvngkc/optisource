@@ -14,6 +14,10 @@ export const ADD_VALUES  = ['-',
   ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
 ]
 
+// Addition values for semi-finished blanks (base_add) — unsigned, no '+' sign.
+// Finished lenses (sph_add, sph_cyl_axis_add) keep ADD_VALUES with '+' signs.
+export const BASE_ADD_VALUES = Array.from({ length: 16 }, (_, i) => String((i + 1) * 25))
+
 // Base values for semi-finished blanks: stored and displayed as unsigned whole numbers.
 // 'Plano' is included first for products with zero base power.
 export const BASE_VALUES = ['Plano', ...Array.from({ length: 12 }, (_, i) => String((i + 1) * 100))]
@@ -31,5 +35,12 @@ export const normalizeBase = dbFormatBase
 // displayFormatBase kept for backward-compat — now a no-op since storage == display.
 export function displayFormatBase(v) {
   if (!v || v === 'Plano' || v === '-') return v
+  return v.startsWith('+') ? v.slice(1) : v
+}
+// Normalize addition for semi-finished blanks (base_add) — strip '+' sign.
+// Finished lenses are left unchanged.
+export function dbFormatAddition(v, isBase) {
+  if (!v || v === '-') return v
+  if (!isBase) return v
   return v.startsWith('+') ? v.slice(1) : v
 }

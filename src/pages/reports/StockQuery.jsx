@@ -4,7 +4,7 @@ import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
 
-import { SPH_VALUES, CYL_VALUES, AXIS_VALUES, ADD_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
+import { SPH_VALUES, CYL_VALUES, AXIS_VALUES, ADD_VALUES, BASE_ADD_VALUES, BASE_VALUES, dbFormatBase, dbFormatAddition } from '../../utils/specs'
 import { resolvePrice } from '../../utils/pricing'
 
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
@@ -144,11 +144,11 @@ function StaffQuery({ profile }) {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name || null }
     const isBase = specType.startsWith('base_')
     return {
-      // Base: strip leading '+' so query matches unsigned whole-number storage
       sph:      isBase && form.sph !== 'all' ? form.sph.replace(/^\+/, '') : form.sph,
       cyl:      (specType === 'sph_add' || isBase) ? null : form.cyl,
       axis:     specType === 'sph_cyl_axis_add' ? form.axis : null,
-      addition: (specType === 'sph_cyl' || specType === 'base_only') ? null : form.addition,
+      addition: (specType === 'sph_cyl' || specType === 'base_only') ? null
+        : (form.addition !== 'all' ? dbFormatAddition(form.addition, isBase) : 'all'),
       name_key: null,
     }
   }
@@ -213,7 +213,7 @@ function StaffQuery({ profile }) {
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
                   <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>
                     <option value="all">Any Addition</option>
-                    {ADD_VALUES.map(v => <option key={v}>{v}</option>)}
+                    {(specType.startsWith('base_') ? BASE_ADD_VALUES : ADD_VALUES.filter(v => v !== '-')).map(v => <option key={v}>{v}</option>)}
                   </select></div>)}
             </div>)}
           <button type="submit" disabled={loading || !form.product_id}
@@ -388,11 +388,11 @@ function OpticianQuery({ profile }) {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name || null }
     const isBase = specType.startsWith('base_')
     return {
-      // Base: strip leading '+' so query matches unsigned whole-number storage
       sph:      isBase && form.sph !== 'all' ? form.sph.replace(/^\+/, '') : form.sph,
       cyl:      (specType === 'sph_add' || isBase) ? null : form.cyl,
       axis:     specType === 'sph_cyl_axis_add' ? form.axis : null,
-      addition: (specType === 'sph_cyl' || specType === 'base_only') ? null : form.addition,
+      addition: (specType === 'sph_cyl' || specType === 'base_only') ? null
+        : (form.addition !== 'all' ? dbFormatAddition(form.addition, isBase) : 'all'),
       name_key: null,
     }
   }
@@ -710,7 +710,7 @@ function OpticianQuery({ profile }) {
                 </select></div>
               {(specType === 'sph_cyl' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">CYL</label><select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}><option value="all">Any CYL</option>{CYL_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
               {specType === 'sph_cyl_axis_add' && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Axis</label><select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}><option value="all">Any Axis</option>{AXIS_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
-              {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label><select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}><option value="all">Any Addition</option>{ADD_VALUES.map(v => <option key={v}>{v}</option>)}</select></div>)}
+              {(specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add') && (<div><label className="block text-sm font-medium text-slate-700 mb-1">Addition</label><select value={selForm.addition} onChange={e => update('addition', e.target.value)} className={sc}><option value="all">Any Addition</option>{(specType === 'base_add' ? BASE_ADD_VALUES : ADD_VALUES.filter(v => v !== '-')).map(v => <option key={v}>{v}</option>)}</select></div>)}
             </div>)}
           <button type="submit" disabled={loading || !form.product_id}
             className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors disabled:opacity-40">

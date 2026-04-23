@@ -145,9 +145,11 @@ Full migration file: `C:\Users\hp14\.gemini\antigravity\brain\c5b79f24-8e08-48b6
 | # | Issue | Suspected cause |
 |---|---|---|
 | 1 | Decimal qty error (`30.5` → integer error) | DB columns still INTEGER — **run P1 migration** |
-| 2 | Sales.jsx void (`handleVoid`) — no idempotency guard yet | Should add same guard as `Inventory.jsx` handleVoid |
-| 3 | `OrderDetail.jsx` dispatch void — no idempotency guard | Items can be double-dispatched if user clicks twice |
-| 4 | `Products.jsx` `ManualMode` — no validation before adding row | User can add row with no sph selected |
+| 2 | Base Addition fragmentation | `base_add` products have additions like `+300`. Must be stripped to `300` in UI & DB (just like Base Sph). *Finished lenses (`sph_add`) keep their `+` sign.* |
+| 3 | Sales transaction insert silently failing | "Units Sold" didn't increase on a credit sale, meaning `transactions` insert failed. Likely missing validation (`unit_price` required, `customer_name` required if debt). Also check if `debtors` table insertion is completely missing. |
+| 4 | Sales.jsx void (`handleVoid`) — no idempotency guard yet | Should add same guard as `Inventory.jsx` handleVoid |
+| 5 | `OrderDetail.jsx` dispatch void — no idempotency guard | Items can be double-dispatched if user clicks twice |
+| 6 | `Products.jsx` `ManualMode` — no validation before adding row | User can add row with no sph selected |
 
 ---
 

@@ -3,7 +3,7 @@ import { supabase } from '../../supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Layout from '../../components/Layout'
 
-import { SPH_VALUES, CYL_VALUES, ADD_VALUES, AXIS_VALUES, BASE_VALUES, dbFormatBase } from '../../utils/specs'
+import { SPH_VALUES, CYL_VALUES, ADD_VALUES, BASE_ADD_VALUES, AXIS_VALUES, BASE_VALUES, dbFormatBase, dbFormatAddition } from '../../utils/specs'
 
 // ── Null-safe stock query builder ─────────────────────────────
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
@@ -94,7 +94,7 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Addition</label>
               <select value={form.addition} onChange={e => updateVal('addition', e.target.value)} className={gs}>
                 <option value="">— Select Addition —</option>
-                {ADD_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
+                {(specType === 'base_add' ? BASE_ADD_VALUES : ADD_VALUES.filter(v => v !== '-')).map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -201,7 +201,7 @@ function InventoryEntryTab({ profile, locations, classes }) {
       sph:      isBase ? ((form.sph || '').replace(/^\+/, '') || null) : (form.sph || null),
       cyl:      usesCyl  ? (form.cyl      && form.cyl      !== '-' ? form.cyl      : null) : null,
       axis:     usesAxis ? (form.axis     && form.axis     !== '-' ? form.axis     : null) : null,
-      addition: usesAdd  ? (form.addition && form.addition !== '-' ? form.addition : null) : null,
+      addition: usesAdd  ? (form.addition && form.addition !== '-' ? dbFormatAddition(form.addition, isBase) : null) : null,
       name_key: null,
     }
   }
@@ -470,7 +470,7 @@ function InventoryTransferTab({ profile, locations, classes }) {
       sph:      isBase ? ((selForm.sph || '').replace(/^\+/, '') || null) : (selForm.sph || null),
       cyl:      usesCyl  ? (selForm.cyl      && selForm.cyl      !== '-' ? selForm.cyl      : null) : null,
       axis:     usesAxis ? (selForm.axis     && selForm.axis     !== '-' ? selForm.axis     : null) : null,
-      addition: usesAdd  ? (selForm.addition && selForm.addition !== '-' ? selForm.addition : null) : null,
+      addition: usesAdd  ? (selForm.addition && selForm.addition !== '-' ? dbFormatAddition(selForm.addition, isBase) : null) : null,
       name_key: null,
     }
   }
