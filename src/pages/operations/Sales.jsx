@@ -144,8 +144,9 @@ export default function Sales() {
       name_key: sel.spec_type === 'name_only' ? sel.name : null,
     }
     const base = supabase.from('stock').select('qty, allocated_qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
-    const { data } = await buildStockQuery(base, specs).maybeSingle()
-    setAvailableStock(data ? (data.qty - (data.allocated_qty || 0)) : 0)
+    const { data: rows } = await buildStockQuery(base, specs)
+    const total = (rows || []).reduce((s, r) => s + (Number(r.qty) - Number(r.allocated_qty || 0)), 0)
+    setAvailableStock(total)
     setStockLoading(false)
   }
 
@@ -174,16 +175,25 @@ export default function Sales() {
     setLoading(true)
     const specs = getSpecs()
     const base  = supabase.from('stock').select('id, qty, allocated_qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
-    const { data: stockRow } = await buildStockQuery(base, specs).maybeSingle()
-    const stockAvailable = stockRow ? (stockRow.qty - (stockRow.allocated_qty || 0)) : 0
-    if (!stockRow || stockAvailable < qty) {
-      flash('error', `Oversell blocked — only ${stockAvailable} available`)
-      setAvailableStock(stockAvailable); setLoading(false); return
+    const { data: stockRows } = await buildStockQuery(base, specs)
+    const totalAvailable = (stockRows || []).reduce((s, r) => s + (Number(r.qty) - Number(r.allocated_qty || 0)), 0)
+    if (!stockRows?.length || totalAvailable < qty) {
+      flash('error', `Oversell blocked — only ${totalAvailable} available`)
+      setAvailableStock(totalAvailable); setLoading(false); return
     }
 
-    // Deduct stock
-    const { error: stockErr } = await supabase.from('stock').update({ qty: stockRow.qty - qty, updated_at: new Date() }).eq('id', stockRow.id)
-    if (stockErr) { flash('error', `Stock update failed: ${stockErr.message}`); setLoading(false); return }
+    // Deduct stock — spread across rows highest-qty first (handles duplicate rows gracefully)
+    const sortedRows = [...stockRows].sort((a, b) => Number(b.qty) - Number(a.qty))
+    let toDeduct = qty
+    for (const row of sortedRows) {
+      if (toDeduct <= 0) break
+      const avail = Number(row.qty) - Number(row.allocated_qty || 0)
+      if (avail <= 0) continue
+      const take = Math.min(avail, toDeduct)
+      const { error: stockErr } = await supabase.from('stock').update({ qty: Number(row.qty) - take, updated_at: new Date() }).eq('id', row.id)
+      if (stockErr) { flash('error', `Stock update failed: ${stockErr.message}`); setLoading(false); return }
+      toDeduct -= take
+    }
 
     // Upsert customer
     let customerId = null
