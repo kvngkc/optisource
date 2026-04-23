@@ -181,6 +181,11 @@ export default function OrderDetail() {
     // Handle fulfillment deduction
     if (newStatus === 'dispatched') {
       for (const item of items) {
+        // Normalize spec_details: strip legacy '+' from base sph if present
+        const specs = item.spec_details
+          ? { ...item.spec_details, sph: item.spec_details.sph ? item.spec_details.sph.replace(/^\+/, '') : item.spec_details.sph }
+          : item.spec_details
+
         // Log SALE transaction
         await supabase.from('transactions').insert({
           company_id: order.company_id,
@@ -192,12 +197,12 @@ export default function OrderDetail() {
           total_amount: item.subtotal,
           customer_name: order.optician_name,
           created_by: profile.id,
-          ...item.spec_details
+          ...specs
         })
 
-        // Deduct from stock
+        // Deduct from stock using normalized specs
         let base = supabase.from('stock').select('id, qty').eq('product_id', item.product_id).eq('location_id', dispatchLoc)
-        const { data: stockRow } = await buildStockQuery(base, item.spec_details).maybeSingle()
+        const { data: stockRow } = await buildStockQuery(base, specs).maybeSingle()
         if (stockRow) {
           await supabase.from('stock').update({ qty: stockRow.qty - item.qty }).eq('id', stockRow.id)
         }
@@ -383,6 +388,7 @@ export default function OrderDetail() {
                 <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                   <select value={dispatchLoc} onChange={e => setDispatchLoc(e.target.value)} disabled={actioning}
                     className="bg-transparent text-sm font-medium text-slate-700 px-2 focus:outline-none min-w-[120px]">
+                    <option value="">— Select dispatch location —</option>
                     {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
                   </select>
                   <button onClick={() => updateStatus('dispatched')} disabled={actioning || !dispatchLoc}

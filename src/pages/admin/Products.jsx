@@ -77,9 +77,9 @@ const TEMPLATE_GROUPS = [
         hasSph: true, hasCyl: false, hasAxis: false, hasAdd: true, isUtility: false,
         csvCols: ['product_name', 'location_code', 'base', 'addition', 'qty'],
         examples: [
-          '1.56 Blank Bifocal,STORE,+200,+100,12',
-          '1.56 Blank Bifocal,STORE,+175,+125,8',
-          'CR39 Blank Prog,SHOP1,+200,+200,5',
+          '1.56 Blank Bifocal,STORE,200,+100,12',
+          '1.56 Blank Bifocal,STORE,175,+125,8',
+          'CR39 Blank Prog,SHOP1,200,+200,5',
         ],
       },
       {
@@ -91,9 +91,9 @@ const TEMPLATE_GROUPS = [
         hasSph: true, hasCyl: false, hasAxis: false, hasAdd: false, isUtility: false,
         csvCols: ['product_name', 'location_code', 'base', 'qty'],
         examples: [
-          '1.50 Blank SV,STORE,+200,10',
+          '1.50 Blank SV,STORE,200,10',
           '1.50 Blank SV,STORE,Plano,20',
-          '1.56 Blank SV,SHOP1,-025,8',
+          '1.56 Blank SV,SHOP1,175,8',
         ],
       },
     ],
@@ -433,10 +433,10 @@ function ManualMode({ template, profile }) {
   const [rows, setRows]                   = useState([])
   const [productName, setProductName]     = useState('')
   const [locCode, setLocCode]             = useState('')
-  const [sphVal, setSphVal]               = useState(SPH_VALUES[0])
-  const [cylVal, setCylVal]               = useState('-')
-  const [axisVal, setAxisVal]             = useState('-')
-  const [addVal, setAddVal]               = useState('-')
+  const [sphVal, setSphVal]               = useState('')
+  const [cylVal, setCylVal]               = useState('')
+  const [axisVal, setAxisVal]             = useState('')
+  const [addVal, setAddVal]               = useState('')
   const [qty, setQty]                     = useState('')
   const [step, setStep]                   = useState('entry')   // entry | validating | preview | importing | done
   const [validatedRows, setValidatedRows] = useState([])
@@ -543,7 +543,8 @@ function ManualMode({ template, profile }) {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{template.sphLabel}</label>
               <select value={sphVal} onChange={e => setSphVal(e.target.value)} className={SC}>
-                {SPH_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select {template.sphLabel} —</option>
+                {(template.sphKey === 'base' ? BASE_VALUES : SPH_VALUES).map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -551,7 +552,8 @@ function ManualMode({ template, profile }) {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">CYL</label>
               <select value={cylVal} onChange={e => setCylVal(e.target.value)} className={SC}>
-                {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select CYL —</option>
+                {CYL_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -559,7 +561,8 @@ function ManualMode({ template, profile }) {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Axis</label>
               <select value={axisVal} onChange={e => setAxisVal(e.target.value)} className={SC}>
-                {AXIS_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select Axis —</option>
+                {AXIS_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -567,7 +570,8 @@ function ManualMode({ template, profile }) {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Addition</label>
               <select value={addVal} onChange={e => setAddVal(e.target.value)} className={SC}>
-                {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select Addition —</option>
+                {ADD_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}

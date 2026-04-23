@@ -14,16 +14,21 @@ export const ADD_VALUES  = ['-',
   ...Array.from({ length: 16 }, (_, i) => '+' + String((i + 1) * 25).padStart(3, '0')),
 ]
 
-// Base values for semi-finished blanks: display as 100, 200, ..., 1000 (no + prefix)
-export const BASE_VALUES = Array.from({ length: 10 }, (_, i) => String((i + 1) * 100))
+// Base values for semi-finished blanks: stored and displayed as unsigned whole numbers.
+// 'Plano' is included first for products with zero base power.
+export const BASE_VALUES = ['Plano', ...Array.from({ length: 12 }, (_, i) => String((i + 1) * 100))]
 
-// Helps parse a displayed Base back to +200 format for database storage if needed
+// Normalise a Base value to unsigned whole-number format for DB storage.
+// Strips any leading '+' sign so that '+200' and '200' both become '200'.
 export function dbFormatBase(v) {
   if (!v || v === 'Plano' || v === '-') return v
-  return v.startsWith('+') || v.startsWith('-') ? v : '+' + v
+  return v.startsWith('+') ? v.slice(1) : v
 }
 
-// Formats +200 back to 200 for 'BASE' display
+// Alias used explicitly in import / migration contexts.
+export const normalizeBase = dbFormatBase
+
+// displayFormatBase kept for backward-compat — now a no-op since storage == display.
 export function displayFormatBase(v) {
   if (!v || v === 'Plano' || v === '-') return v
   return v.startsWith('+') ? v.slice(1) : v

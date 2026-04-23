@@ -144,7 +144,8 @@ function StaffQuery({ profile }) {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name || null }
     const isBase = specType.startsWith('base_')
     return {
-      sph:      form.sph,
+      // Base: strip leading '+' so query matches unsigned whole-number storage
+      sph:      isBase && form.sph !== 'all' ? form.sph.replace(/^\+/, '') : form.sph,
       cyl:      (specType === 'sph_add' || isBase) ? null : form.cyl,
       axis:     specType === 'sph_cyl_axis_add' ? form.axis : null,
       addition: (specType === 'sph_cyl' || specType === 'base_only') ? null : form.addition,
@@ -339,7 +340,8 @@ function OpticianQuery({ profile }) {
   useEffect(() => {
     if (!selectedProduct) return
     if (specType.startsWith('base_')) {
-      setForm(f => ({ ...f, sph: '+100', cyl: '+000' }))
+      // Default base sph to unsigned '100' (no leading +)
+      setForm(f => ({ ...f, sph: '100', cyl: '+000' }))
     } else {
       setForm(f => ({ ...f, sph: 'Plano' }))
     }
@@ -389,7 +391,8 @@ function OpticianQuery({ profile }) {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name || null }
     const isBase = specType.startsWith('base_')
     return {
-      sph:      form.sph,
+      // Base: strip leading '+' so query matches unsigned whole-number storage
+      sph:      isBase && form.sph !== 'all' ? form.sph.replace(/^\+/, '') : form.sph,
       cyl:      (specType === 'sph_add' || isBase) ? null : form.cyl,
       axis:     specType === 'sph_cyl_axis_add' ? form.axis : null,
       addition: (specType === 'sph_cyl' || specType === 'base_only') ? null : form.addition,

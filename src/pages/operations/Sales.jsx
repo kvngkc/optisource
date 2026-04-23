@@ -41,8 +41,8 @@ export default function Sales() {
 
   const [form, setForm] = useState({
     class_id: '', product_id: '', location_id: '',
-    sph: 'Plano', cyl: '-', axis: '-', addition: '-',
-    qty: '', unit_price: '', amount_paid: '', payment_method: 'Cash',
+    sph: '', cyl: '', axis: '', addition: '',
+    qty: '', unit_price: '', amount_paid: '', payment_method: '',
     customer_name: '', customer_phone: '', notes: '',
   })
 
@@ -56,21 +56,20 @@ export default function Sales() {
 
   async function fetchClasses() {
     const { data } = await supabase.from('product_classes').select('*').eq('company_id', profile.company_id).order('name')
-    setClasses(data || [])
-    if (data?.length) setForm(f => ({ ...f, class_id: data[0].id }))
+    setClasses(data || []) // No auto-select — user must choose explicitly
   }
   async function fetchProducts(classId) {
     const { data } = await supabase.from('products').select('*').eq('company_id', profile.company_id).eq('class_id', classId).eq('is_active', true).order('name')
     setProducts(data || [])
-    setForm(f => ({ ...f, product_id: data?.[0]?.id || '' }))
+    setForm(f => ({ ...f, product_id: '', sph: '', cyl: '', axis: '', addition: '' }))
   }
   async function fetchLocations() {
     let q = supabase.from('locations').select('*').eq('company_id', profile.company_id).order('name')
     if (profile?.role === 'staff' && profile?.location_id) q = q.eq('id', profile.location_id)
     const { data } = await q
     setLocations(data || [])
+    // Staff are auto-assigned; everyone else must pick explicitly
     if (profile?.role === 'staff' && profile?.location_id) setForm(f => ({ ...f, location_id: profile.location_id }))
-    else if (data?.length) setForm(f => ({ ...f, location_id: data[0].id }))
   }
   async function fetchRecentSales() {
     let q = supabase
@@ -97,24 +96,31 @@ export default function Sales() {
   const totalAmount     = (Number(form.qty) * Number(form.unit_price)) || 0
   const balance         = totalAmount - (Number(form.amount_paid) || 0)
 
+  // Normalize base sph to unsigned whole-number format before any DB operation
+  function normSph(sph, isBase) {
+    if (!sph) return sph
+    return isBase ? sph.replace(/^\+/, '') : sph
+  }
+
   function getSpecs() {
     return {
-      sph:      isUtility ? null : form.sph,
-      cyl:      isUtility ? null : (specType === 'sph_add' ? null : form.cyl),
-      axis:     isUtility ? null : (specType === 'sph_cyl_axis_add' ? form.axis : null),
-      addition: isUtility ? null : (specType === 'sph_cyl' ? null : form.addition),
+      sph:      isUtility ? null : normSph(form.sph, usesBase),
+      cyl:      isUtility ? null : (specType === 'sph_add' || usesBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null)),
+      axis:     isUtility ? null : (specType === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null),
+      addition: isUtility ? null : (specType === 'sph_cyl' || specType === 'base_only' ? null : (form.addition && form.addition !== '-' ? form.addition : null)),
       name_key: isUtility ? selectedProduct?.name : null,
     }
   }
 
   async function loadDefaultPrice() {
     const sel = products.find(p => p.id === form.product_id)
-    if (!sel || sel.spec_type === 'name_only') return
+    if (!sel || sel.spec_type === 'name_only' || !form.sph) return
+    const isBase = sel.spec_type.startsWith('base_')
     const specs = {
-      sph:      form.sph,
-      cyl:      sel.spec_type === 'sph_add' || sel.spec_type === 'base_add' ? null : form.cyl,
-      axis:     sel.spec_type === 'sph_cyl_axis_add' ? form.axis : null,
-      addition: sel.spec_type === 'sph_cyl' || sel.spec_type === 'base_only' ? null : form.addition,
+      sph:      normSph(form.sph, isBase),
+      cyl:      sel.spec_type === 'sph_add' || isBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null),
+      axis:     sel.spec_type === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null,
+      addition: sel.spec_type === 'sph_cyl' || sel.spec_type === 'base_only' ? null : (form.addition && form.addition !== '-' ? form.addition : null),
       name_key: null,
     }
     const price = await resolvePrice(form.product_id, profile.company_id, specs)
@@ -122,14 +128,16 @@ export default function Sales() {
   }
 
   async function checkStock() {
+    if (!form.product_id || !form.location_id) return
     setStockLoading(true)
     const sel = products.find(p => p.id === form.product_id)
     if (!sel) { setStockLoading(false); return }
+    const isBase = sel.spec_type.startsWith('base_')
     const specs = {
-      sph:      sel.spec_type === 'name_only' ? null : form.sph,
-      cyl:      sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_add' ? null : form.cyl),
-      axis:     sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl_axis_add' ? form.axis : null),
-      addition: sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl' ? null : form.addition),
+      sph:      sel.spec_type === 'name_only' ? null : normSph(form.sph, isBase),
+      cyl:      sel.spec_type === 'name_only' || sel.spec_type === 'sph_add' || isBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null),
+      axis:     sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null),
+      addition: sel.spec_type === 'name_only' || sel.spec_type === 'sph_cyl' || sel.spec_type === 'base_only' ? null : (form.addition && form.addition !== '-' ? form.addition : null),
       name_key: sel.spec_type === 'name_only' ? sel.name : null,
     }
     const base = supabase.from('stock').select('qty, allocated_qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
@@ -142,6 +150,15 @@ export default function Sales() {
     e.preventDefault()
     const qty = Number(form.qty)
     if (!form.product_id || !form.location_id) { flash('error', 'Product and location required'); return }
+    if (!form.payment_method) { flash('error', 'Please select a payment method'); return }
+    if (!isUtility) {
+      if (!form.sph) { flash('error', `Please select a ${usesBase ? 'Base' : 'SPH'} value`); return }
+      const usesAdd = ['sph_add','base_add','sph_cyl_axis_add'].includes(specType)
+      if (usesAdd && !form.addition) { flash('error', 'Please select an Addition value'); return }
+      const needsCyl = ['sph_cyl','sph_cyl_axis_add'].includes(specType)
+      if (needsCyl && !form.cyl) { flash('error', 'Please select a CYL value'); return }
+      if (specType === 'sph_cyl_axis_add' && !form.axis) { flash('error', 'Please select an Axis value'); return }
+    }
     if (!qty || qty <= 0) { flash('error', 'Qty must be a positive number'); return }
     if (availableStock !== null && qty > availableStock) {
       flash('error', `Oversell blocked — only ${availableStock} available`); return
@@ -289,6 +306,7 @@ export default function Sales() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
               <select value={form.location_id} onChange={e => update('location_id', e.target.value)} className={sc}>
+                <option value="">— Select location —</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.code})</option>)}
               </select>
             </div>
@@ -296,6 +314,7 @@ export default function Sales() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Product class</label>
               <select value={form.class_id} onChange={e => update('class_id', e.target.value)} className={sc}>
+                <option value="">— Select class —</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -303,18 +322,17 @@ export default function Sales() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Product</label>
               <select value={form.product_id} onChange={e => update('product_id', e.target.value)} className={sc}>
+                <option value="">— Select product —</option>
                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
 
-            {!isUtility && (
+            {!isUtility && form.product_id && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">{usesBase ? 'Base' : 'SPH'}</label>
-                  <select value={usesBase ? form.sph.replace('+', '') : form.sph} onChange={e => {
-                    const v = usesBase ? (e.target.value === 'Plano' || e.target.value === '-' ? e.target.value : (e.target.value.startsWith('+') || e.target.value.startsWith('-') ? e.target.value : '+' + e.target.value)) : e.target.value
-                    update('sph', v)
-                  }} className={sc}>
+                  <select value={form.sph} onChange={e => update('sph', e.target.value)} className={sc}>
+                    <option value="">— Select {usesBase ? 'Base' : 'SPH'} —</option>
                     {(usesBase ? BASE_VALUES : SPH_VALUES).map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
@@ -322,7 +340,8 @@ export default function Sales() {
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">CYL</label>
                     <select value={form.cyl} onChange={e => update('cyl', e.target.value)} className={sc}>
-                      {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                      <option value="">— Select CYL —</option>
+                      {CYL_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
                 )}
@@ -330,7 +349,8 @@ export default function Sales() {
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Axis</label>
                     <select value={form.axis} onChange={e => update('axis', e.target.value)} className={sc}>
-                      {AXIS_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                      <option value="">— Select Axis —</option>
+                      {AXIS_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
                 )}
@@ -338,7 +358,8 @@ export default function Sales() {
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Addition</label>
                     <select value={form.addition} onChange={e => update('addition', e.target.value)} className={sc}>
-                      {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                      <option value="">— Select Addition —</option>
+                      {ADD_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
                 )}
@@ -393,6 +414,7 @@ export default function Sales() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Payment</label>
                 <select value={form.payment_method} onChange={e => update('payment_method', e.target.value)} className={sc}>
+                  <option value="">— Select method —</option>
                   {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>

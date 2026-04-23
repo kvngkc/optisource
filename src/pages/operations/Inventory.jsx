@@ -66,7 +66,8 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>{usesBase ? 'Base' : 'SPH'}</label>
-            <select value={usesBase ? form.sph.replace('+', '') : form.sph} onChange={e => updateVal('sph', e.target.value)} className={gs}>
+            <select value={form.sph} onChange={e => updateVal('sph', e.target.value)} className={gs}>
+              <option value="">— Select {usesBase ? 'Base' : 'SPH'} —</option>
               {(usesBase ? BASE_VALUES : SPH_VALUES).map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
@@ -74,7 +75,8 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
             <div>
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>CYL</label>
               <select value={form.cyl} onChange={e => updateVal('cyl', e.target.value)} className={gs}>
-                {CYL_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select CYL —</option>
+                {CYL_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -82,7 +84,8 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
             <div>
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Axis</label>
               <select value={form.axis} onChange={e => updateVal('axis', e.target.value)} className={gs}>
-                {AXIS_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select Axis —</option>
+                {AXIS_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -90,7 +93,8 @@ function SpecSelector({ form, setForm, products, classes, showLocation, location
             <div>
               <label className={`block ${compact ? 'text-xs' : 'text-sm'} font-medium text-slate-700 mb-1`}>Addition</label>
               <select value={form.addition} onChange={e => updateVal('addition', e.target.value)} className={gs}>
-                {ADD_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="">— Select Addition —</option>
+                {ADD_VALUES.filter(v => v !== '-').map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
           )}
@@ -106,12 +110,13 @@ function InventoryEntryTab({ profile, locations, classes }) {
   const [recentLogs, setRecentLogs] = useState([])
   const [form, setForm] = useState({
     class_id: '', product_id: '', location_id: '',
-    sph: 'Plano', cyl: '-', axis: '-', addition: '-', qty: '',
+    sph: '', cyl: '', axis: '', addition: '', qty: '',
   })
   const [loading, setLoading] = useState(false)
   const [voiding, setVoiding] = useState(null)
   const [msg, setMsg]         = useState({ type: '', text: '' })
   const [logPage, setLogPage] = useState(0)
+  const [dupWarning, setDupWarning] = useState(null) // existing qty at this location/spec
 
   useEffect(() => {
     if (form.class_id) fetchProducts(form.class_id)
@@ -123,8 +128,39 @@ function InventoryEntryTab({ profile, locations, classes }) {
     const product = products.find(p => p.id === form.product_id)
     if (!product) return
     const isBase = product.spec_type.startsWith('base_')
-    setForm(f => ({ ...f, sph: isBase ? '+100' : 'Plano', cyl: '-', axis: '-', addition: '-' }))
+    // Spec fields start blank — user must explicitly select to prevent human error
+    setForm(f => ({ ...f, sph: '', cyl: '', axis: '', addition: '' }))
   }, [form.product_id])
+
+  // ── Duplicate-check: warn if a stock row already exists at this location ─
+  useEffect(() => {
+    setDupWarning(null)
+    if (!form.product_id || !form.location_id) return
+    const product = products.find(p => p.id === form.product_id)
+    if (!product) return
+    const isBase   = product.spec_type.startsWith('base_')
+    const isUtil   = product.spec_type === 'name_only'
+    const usesCyl  = product.spec_type === 'sph_cyl' || product.spec_type === 'sph_cyl_axis_add'
+    const usesAxis = product.spec_type === 'sph_cyl_axis_add'
+    const usesAdd  = product.spec_type === 'sph_add' || product.spec_type === 'base_add' || product.spec_type === 'sph_cyl_axis_add'
+    const specs = isUtil
+      ? { sph: null, cyl: null, axis: null, addition: null, name_key: product.name }
+      : {
+          sph:      isBase ? ((form.sph || '').replace(/^\+/, '') || null) : (form.sph || null),
+          cyl:      usesCyl  ? (form.cyl  && form.cyl  !== '-' ? form.cyl  : null) : null,
+          axis:     usesAxis ? (form.axis && form.axis !== '-' ? form.axis : null) : null,
+          addition: usesAdd  ? (form.addition && form.addition !== '-' ? form.addition : null) : null,
+          name_key: null,
+        }
+    let cancelled = false
+    ;(async () => {
+      const base = supabase.from('stock').select('id, qty')
+        .eq('product_id', form.product_id).eq('location_id', form.location_id)
+      const { data } = await buildStockQuery(base, specs).maybeSingle()
+      if (!cancelled) setDupWarning(data ? data.qty : null)
+    })()
+    return () => { cancelled = true }
+  }, [form.product_id, form.location_id, form.sph, form.cyl, form.axis, form.addition])
 
   useEffect(() => {
     if (profile?.company_id) fetchRecentLogs()
@@ -161,7 +197,8 @@ function InventoryEntryTab({ profile, locations, classes }) {
     const usesAxis = specType === 'sph_cyl_axis_add'
     const usesAdd  = specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add'
     return {
-      sph:      form.sph || null,
+      // Base: always strip leading '+' to enforce unsigned whole-number storage
+      sph:      isBase ? ((form.sph || '').replace(/^\+/, '') || null) : (form.sph || null),
       cyl:      usesCyl  ? (form.cyl      && form.cyl      !== '-' ? form.cyl      : null) : null,
       axis:     usesAxis ? (form.axis     && form.axis     !== '-' ? form.axis     : null) : null,
       addition: usesAdd  ? (form.addition && form.addition !== '-' ? form.addition : null) : null,
@@ -173,6 +210,16 @@ function InventoryEntryTab({ profile, locations, classes }) {
     e.preventDefault()
     const qty = parseFloat(form.qty)
     if (!form.product_id || !form.location_id) { flash('error', 'Product and location required'); return }
+    // Spec validation — required fields must be explicitly selected
+    if (!isUtility) {
+      const isBase = specType.startsWith('base_')
+      if (!form.sph) { flash('error', `Please select a ${isBase ? 'Base' : 'SPH'} value`); return }
+      const usesAdd = ['sph_add','base_add','sph_cyl_axis_add'].includes(specType)
+      if (usesAdd && !form.addition) { flash('error', 'Please select an Addition value'); return }
+      const needsCyl = ['sph_cyl','sph_cyl_axis_add'].includes(specType)
+      if (needsCyl && !form.cyl) { flash('error', 'Please select a CYL value'); return }
+      if (specType === 'sph_cyl_axis_add' && !form.axis) { flash('error', 'Please select an Axis value'); return }
+    }
     if (!qty || qty <= 0) { flash('error', 'Qty must be a positive number'); return }
     setLoading(true)
     const specs = getSpecValues()
@@ -211,13 +258,18 @@ function InventoryEntryTab({ profile, locations, classes }) {
       setForm(f => ({ ...f, class_id: classId }))
       await new Promise(r => setTimeout(r, 300))
     }
+    const isBaseProduct = log.products?.spec_type?.startsWith('base_')
     setForm(f => ({
       ...f,
-      class_id: classId || f.class_id,
+      class_id:   classId || f.class_id,
       product_id: log.product_id,
       location_id: log.location_id,
-      sph: log.sph || 'Plano', cyl: log.cyl || '-',
-      axis: log.axis || '-', addition: log.addition || '-',
+      // Re-use the exact values from the log row the user clicked
+      // Normalise base sph (strip legacy '+' if present)
+      sph:      isBaseProduct ? (log.sph || '').replace(/^\+/, '') : (log.sph || ''),
+      cyl:      (log.cyl      && log.cyl      !== '-') ? log.cyl      : '',
+      axis:     (log.axis     && log.axis     !== '-') ? log.axis     : '',
+      addition: (log.addition && log.addition !== '-') ? log.addition : '',
       qty: '',
     }))
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -279,6 +331,18 @@ function InventoryEntryTab({ profile, locations, classes }) {
             products={products} classes={classes}
             showLocation locations={locations}
           />
+
+          {/* ── Duplicate-stock warning ── */}
+          {dupWarning !== null && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <span className="text-amber-500 text-base flex-shrink-0">⚠</span>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                <strong>Stock already exists</strong> at this location for these specs&nbsp;—&nbsp;
+                current qty: <strong>{dupWarning}</strong>. Submitting will add to the existing row.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
             <input type="number" min="0.5" step="0.5" required
@@ -357,7 +421,8 @@ function InventoryEntryTab({ profile, locations, classes }) {
 // ── Inventory Transfer tab ────────────────────────────────────
 function InventoryTransferTab({ profile, locations, classes }) {
   const [products, setProducts]         = useState([])
-  const [selForm, setSelForm]           = useState({ class_id: '', product_id: '', sph: 'Plano', cyl: '-', axis: '-', addition: '-' })
+  // Transfer tab — spec fields start blank; user must select before stock loads
+  const [selForm, setSelForm] = useState({ class_id: '', product_id: '', sph: '', cyl: '', axis: '', addition: '' })
   const [stockRows, setStockRows]       = useState([])   // sources with available + moveQty
   const [toRows, setToRows]             = useState([{ _id: Date.now(), location_id: '', qty: '' }])
   const [searching, setSearching]       = useState(false)
@@ -385,11 +450,13 @@ function InventoryTransferTab({ profile, locations, classes }) {
 
   function getSpecValues() {
     if (isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: selectedProduct?.name }
+    const isBase   = specType.startsWith('base_')
     const usesCyl  = specType === 'sph_cyl' || specType === 'sph_cyl_axis_add'
     const usesAxis = specType === 'sph_cyl_axis_add'
     const usesAdd  = specType === 'sph_add' || specType === 'base_add' || specType === 'sph_cyl_axis_add'
     return {
-      sph:      selForm.sph || null,
+      // Base: always strip leading '+' to enforce unsigned whole-number storage
+      sph:      isBase ? ((selForm.sph || '').replace(/^\+/, '') || null) : (selForm.sph || null),
       cyl:      usesCyl  ? (selForm.cyl      && selForm.cyl      !== '-' ? selForm.cyl      : null) : null,
       axis:     usesAxis ? (selForm.axis     && selForm.axis     !== '-' ? selForm.axis     : null) : null,
       addition: usesAdd  ? (selForm.addition && selForm.addition !== '-' ? selForm.addition : null) : null,
@@ -398,8 +465,22 @@ function InventoryTransferTab({ profile, locations, classes }) {
   }
 
   // Auto-load stock whenever product or spec selection changes
+  // Guard: only search when all required spec fields are actually selected
   useEffect(() => {
     if (!selForm.product_id) return
+    const product = products.find(p => p.id === selForm.product_id)
+    if (!product) return
+    const st = product.spec_type
+    const isBase = st.startsWith('base_')
+    const isUtil = st === 'name_only'
+    if (!isUtil) {
+      if (!selForm.sph) return // required for all non-utility
+      const needsAdd = ['sph_add','base_add','sph_cyl_axis_add'].includes(st)
+      if (needsAdd && !selForm.addition) return
+      const needsCyl = ['sph_cyl','sph_cyl_axis_add'].includes(st)
+      if (needsCyl && !selForm.cyl) return
+      if (st === 'sph_cyl_axis_add' && !selForm.axis) return
+    }
     let cancelled = false
     async function loadStock() {
       setSearching(true)
@@ -594,6 +675,18 @@ function InventoryTransferTab({ profile, locations, classes }) {
     </div>
   )
 
+  // Derived: are all required spec fields selected for this product?
+  const specsComplete = (() => {
+    if (!selForm.product_id || !selectedProduct) return false
+    const st = selectedProduct.spec_type
+    if (st === 'name_only') return true
+    if (!selForm.sph) return false
+    if (['sph_add','base_add','sph_cyl_axis_add'].includes(st) && !selForm.addition) return false
+    if (['sph_cyl','sph_cyl_axis_add'].includes(st) && !selForm.cyl) return false
+    if (st === 'sph_cyl_axis_add' && !selForm.axis) return false
+    return true
+  })()
+
   return (
     <div className="space-y-5">
 
@@ -624,7 +717,18 @@ function InventoryTransferTab({ profile, locations, classes }) {
               {totalFrom > 0 && <span className="text-sm font-bold text-red-500 bg-red-50 px-2 py-1 rounded-lg">−{totalFrom}</span>}
             </div>
 
-            {stockRows.length === 0 ? (
+            {!specsComplete ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-center">
+                <span className="text-2xl">☝️</span>
+                <p className="text-sm font-medium text-slate-600">Select all required spec values above</p>
+                <p className="text-xs text-slate-400">Stock locations will appear here once the spec is complete.</p>
+              </div>
+            ) : searching ? (
+              <div className="flex items-center gap-2 py-6 justify-center text-slate-400 text-sm">
+                <span className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                Searching…
+              </div>
+            ) : stockRows.length === 0 ? (
               <div className="text-center py-6 text-slate-400 text-sm">
                 No stock found at any location for this product + spec.
                 <br /><span className="text-xs">Have you added stock via Inventory Entry?</span>
@@ -758,8 +862,8 @@ const TEMPLATE_GROUPS = [
   {
     group: 'Semi-finished Blanks',
     templates: [
-      { id: 'semi_base_add', label: 'Blank (Base + ADD)', desc: 'e.g. Bifocal blank, Progressive blank', spec_type: 'base_add', sphKey: 'base', hasSph: true, hasCyl: false, hasAxis: false, hasAdd: true, isUtility: false, csvCols: ['product_name','location_code','base','addition','qty'], examples: ['1.56 Blank Bifocal,STORE,+200,+100,12'] },
-      { id: 'semi_base_only', label: 'Blank (Base only)', desc: 'e.g. Single vision blank', spec_type: 'base_only', sphKey: 'base', hasSph: true, hasCyl: false, hasAxis: false, hasAdd: false, isUtility: false, csvCols: ['product_name','location_code','base','qty'], examples: ['1.50 Blank SV,STORE,+200,10'] },
+      { id: 'semi_base_add', label: 'Blank (Base + ADD)', desc: 'e.g. Bifocal blank, Progressive blank', spec_type: 'base_add', sphKey: 'base', hasSph: true, hasCyl: false, hasAxis: false, hasAdd: true, isUtility: false, csvCols: ['product_name','location_code','base','addition','qty'], examples: ['1.56 Blank Bifocal,STORE,200,+100,12'] },
+      { id: 'semi_base_only', label: 'Blank (Base only)', desc: 'e.g. Single vision blank', spec_type: 'base_only', sphKey: 'base', hasSph: true, hasCyl: false, hasAxis: false, hasAdd: false, isUtility: false, csvCols: ['product_name','location_code','base','qty'], examples: ['1.50 Blank SV,STORE,200,10'] },
     ],
   },
   {
@@ -789,7 +893,9 @@ function buildImportStockQuery(base, { sph, cyl, axis, addition, name_key }) {
 
 function buildImportSpecs(row, tpl) {
   if (tpl.isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: (row.product_name || '').trim() || null }
-  const sphVal = (row[tpl.sphKey] || '').trim() || null
+  let sphVal = (row[tpl.sphKey] || '').trim() || null
+  // Base templates: strip leading '+' so '+200' and '200' both normalise to '200'
+  if (tpl.sphKey === 'base' && sphVal) sphVal = sphVal.replace(/^\+/, '')
   return {
     sph: sphVal,
     cyl: tpl.hasCyl ? ((row.cyl && row.cyl !== '-') ? row.cyl.trim() : null) : null,
