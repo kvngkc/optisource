@@ -270,8 +270,6 @@ export default function Sales() {
         balance: balance > 0 ? balance : null,
         payment_method: form.payment_method,
         customer_id: customerId,
-        customer_name: form.customer_name || null,
-        customer_phone: form.customer_phone || null,
         notes: form.notes || null,
         created_by: profile.id,
       })
