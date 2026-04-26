@@ -63,97 +63,39 @@ You are the **Lead AI Software Engineer and Product Manager** for **Optisource**
 
 ## 4. What Was Completed This Session
 
-### A. Base Value Normalization (DONE ✅)
-The system had fragmented stock rows caused by inconsistent storage of Base values — some rows stored `"+400"`, others `"400"`. This caused query mismatches and phantom duplicates.
+### A. Decimal Qty DB Migration (DONE ✅)
+The database was successfully updated to support `numeric(10,2)` for `stock.qty`, `stock.allocated_qty`, `transactions.qty`, and `optician_order_items.qty`.
 
+### B. Base Spec Normalization (DONE ✅)
+Base values are now unsigned `400` instead of `+400`. `BASE_VALUES` and `dbFormatBase()` ensure write-time and read-time normalization.
+
+### C. Base Addition Normalization (DONE ✅)
+The system had fragmented stock rows due to `+` prefixed addition values for semi-finished blanks (e.g. `+300` vs `300`). 
 **Fixes applied:**
-1. **`src/utils/specs.js`** — `dbFormatBase()` now **strips** `+` (was adding it). `normalizeBase` alias added. `BASE_VALUES` now includes `"Plano"` as first item.
-2. **`src/pages/operations/Inventory.jsx`:**
-   - `InventoryEntryTab.getSpecValues()` — normalizes base sph before DB write
-   - `InventoryTransferTab.getSpecValues()` — same
-   - `buildImportSpecs()` — strips `+` from base column on CSV import
-   - `prefillFromLog()` — reuses actual log values when user clicks a row; normalizes legacy `+` prefix
-   - `handleVoid()` — idempotency guard (checks for existing `INVENTORY_VOID` before proceeding)
-   - `specsComplete` computed value — Transfer FROM panel shows contextual hint when spec incomplete
-   - Inline duplicate-stock warning (amber banner below spec selector)
-3. **`src/pages/reports/StockQuery.jsx`:**
-   - Both `getSpecs()` functions normalize base sph before querying
-   - Optician `useEffect` — resets all spec filters to `'all'` when product changes (was incorrectly defaulting to `'100'`)
-   - Staff query dropdowns — class and product start with `"— Select —"` placeholders
-4. **`src/pages/operations/Sales.jsx`:**
-   - `normSph()` helper added — normalizes base sph in `getSpecs()`, `checkStock()`, `loadDefaultPrice()`
-   - All dropdowns start with placeholder options (no auto-selected defaults)
-   - Spec validation before submit (blocks if required fields are empty)
-5. **`src/pages/reports/OrderDetail.jsx`:**
-   - Dispatch deduction normalizes `spec_details.sph` before querying stock
-   - Dispatch location dropdown has placeholder
-6. **`src/pages/admin/Products.jsx`:**
-   - Manual import mode uses `BASE_VALUES` for base templates (was using `SPH_VALUES`)
-   - All spec dropdowns start with placeholders
-   - CSV template examples updated to unsigned base values
+1. `src/utils/specs.js`: Added `BASE_ADD_VALUES` (unsigned additions) and `dbFormatAddition(v, isBase)`.
+2. UI Dropdowns: `Sales`, `Inventory`, `StockQuery` now explicitly use `BASE_ADD_VALUES` for `base_add` products. Finished products (`sph_add`) retain the `+` sign.
+3. SQL Migration: Merged duplicate duplicate rows across all spec variants and stripped `+` from existing `stock` and `transactions` tables.
 
-### B. SQL Migration (DONE ✅ — user confirmed 0 rows remaining)
-File: `C:\Users\hp14\.gemini\antigravity\brain\c5b79f24-8e08-48b6-ab55-3d2a5a84fe57\scratch\base_normalization_migration.sql`
+### D. Sales Module Enhancements & Bug Fixes (DONE ✅)
+1. **Validation**: `unit_price` is now strictly required. If `balance > 0`, `customer_name` is mandatory for debt tracking.
+2. **Debtors Insert**: Credit sales now correctly auto-insert records into the `debtors` table, linking to the `transaction_id`.
+3. **Transaction Error Safety**: If a transaction `insert` fails, the stock deduction is immediately rolled back.
+4. **Idempotency Guard**: `handleVoid` now checks for existing `SALE_VOID` records to prevent double-voiding.
+5. **Void Spec Normalization**: `handleVoid` defensively strips `+` from specs before querying stock to ensure proper returns.
+6. **Void Debt Clearance**: Voiding a sale automatically updates the linked `debtors` record to `is_settled: true, balance: 0` and alerts the user if manual cash refunds are required.
+7. **Stock Aggregate Lookup**: Replaced `maybeSingle()` with `.select()` and aggregate reduction in `checkStock` and `handleSubmit` to prevent "Out of Stock" errors when multiple matching rows (duplicates) exist in the DB.
 
-Merged and normalized 9 fragmented stock rows:
-- FUSE AR: `+400` → `400` (6 rows)
-- FUSE PHOTO: `+600` → `600` (2 rows)
-- INV AR: `+400` → `400` (1 row)
-
-### C. UX: No Default Selections (DONE ✅)
-All spec dropdowns across all pages now start with `"— Select X —"` placeholders. Users must consciously select every field. Spec-required validation blocks submit if any required field is empty.
+### E. Stock Query Fixes (DONE ✅)
+Fixed the Optician stock query page crash caused by a mismatched state variable (`selForm.addition` -> `form.addition`).
 
 ---
 
-## 5. ⚠️ PENDING — Must Complete Next Session
-
-### P1 — CRITICAL: Decimal Qty DB Migration (NOT YET RUN)
-**Error currently active:** `invalid input syntax for type integer: "30.5"`
-
-The frontend accepts decimal quantities (step 0.5) but the DB columns are still `INTEGER`. Run this SQL in Supabase SQL Editor **immediately**:
-
-```sql
--- Fix decimal quantity support
-ALTER TABLE stock
-  ALTER COLUMN qty TYPE NUMERIC(10,2) USING qty::NUMERIC;
-
-ALTER TABLE stock
-  ALTER COLUMN allocated_qty TYPE NUMERIC(10,2) USING COALESCE(allocated_qty, 0)::NUMERIC;
-
-ALTER TABLE transactions
-  ALTER COLUMN qty TYPE NUMERIC(10,2) USING qty::NUMERIC;
-
-ALTER TABLE optician_order_items
-  ALTER COLUMN qty TYPE NUMERIC(10,2) USING qty::NUMERIC;
-```
-
-Verify after with:
-```sql
-SELECT table_name, column_name, data_type
-FROM information_schema.columns
-WHERE column_name = 'qty'
-  AND table_name IN ('stock', 'transactions', 'optician_order_items');
--- All should show data_type = 'numeric'
-```
-
-Full migration file: `C:\Users\hp14\.gemini\antigravity\brain\c5b79f24-8e08-48b6-ab55-3d2a5a84fe57\scratch\decimal_qty_migration.sql`
+## 5. Known Issues / Pending Tasks
+*Currently stable. Next phase is feature expansion and testing.*
 
 ---
 
-## 6. Known Issues to Investigate Next
-
-| # | Issue | Suspected cause |
-|---|---|---|
-| 1 | Decimal qty error (`30.5` → integer error) | DB columns still INTEGER — **run P1 migration** |
-| 2 | Base Addition fragmentation | `base_add` products have additions like `+300`. Must be stripped to `300` in UI & DB (just like Base Sph). *Finished lenses (`sph_add`) keep their `+` sign.* |
-| 3 | Sales transaction insert silently failing | "Units Sold" didn't increase on a credit sale, meaning `transactions` insert failed. Likely missing validation (`unit_price` required, `customer_name` required if debt). Also check if `debtors` table insertion is completely missing. |
-| 4 | Sales.jsx void (`handleVoid`) — no idempotency guard yet | Should add same guard as `Inventory.jsx` handleVoid |
-| 5 | `OrderDetail.jsx` dispatch void — no idempotency guard | Items can be double-dispatched if user clicks twice |
-| 6 | `Products.jsx` `ManualMode` — no validation before adding row | User can add row with no sph selected |
-
----
-
-## 7. Feature Roadmap (not yet started)
+## 6. Feature Roadmap (not yet started)
 
 1. **Purchase Orders module** — COGS/margin calculation
 2. **PDF invoice generation** — auto-generated on dispatch

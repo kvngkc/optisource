@@ -9,9 +9,9 @@ const PAYMENT_METHODS = ['Cash', 'POS', 'Transfer', 'NIL']
 
 function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
   let q = base
-  sph      === null ? q = q.is('sph', null)      : q = q.eq('sph', sph)
-  cyl      === null ? q = q.is('cyl', null)      : q = q.eq('cyl', cyl)
-  axis     === null ? q = q.is('axis', null)     : q = q.eq('axis', axis)
+  sph === null ? q = q.is('sph', null) : q = q.eq('sph', sph)
+  cyl === null ? q = q.is('cyl', null) : q = q.eq('cyl', cyl)
+  axis === null ? q = q.is('axis', null) : q = q.eq('axis', axis)
   addition === null ? q = q.is('addition', null) : q = q.eq('addition', addition)
   name_key === null ? q = q.is('name_key', null) : q = q.eq('name_key', name_key)
   return q
@@ -20,7 +20,7 @@ function buildStockQuery(base, { sph, cyl, axis, addition, name_key }) {
 function timeAgo(ts) {
   const diff = Date.now() - new Date(ts)
   const m = Math.floor(diff / 60000)
-  if (m < 1)  return 'just now'
+  if (m < 1) return 'just now'
   if (m < 60) return `${m}m ago`
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h ago`
@@ -29,14 +29,14 @@ function timeAgo(ts) {
 
 export default function Sales() {
   const { profile } = useAuth()
-  const [products,       setProducts]       = useState([])
-  const [locations,      setLocations]      = useState([])
-  const [classes,        setClasses]        = useState([])
-  const [recentSales,    setRecentSales]    = useState([])
+  const [products, setProducts] = useState([])
+  const [locations, setLocations] = useState([])
+  const [classes, setClasses] = useState([])
+  const [recentSales, setRecentSales] = useState([])
   const [availableStock, setAvailableStock] = useState(null)
-  const [stockLoading,   setStockLoading]   = useState(false)
-  const [loading,        setLoading]        = useState(false)
-  const [voiding,        setVoiding]        = useState(null) // sale id being voided
+  const [stockLoading, setStockLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [voiding, setVoiding] = useState(null) // sale id being voided
   const [msg, setMsg] = useState({ type: '', text: '' })
 
   const [form, setForm] = useState({
@@ -77,24 +77,24 @@ export default function Sales() {
       .select('*, products(name), locations(name, code)')
       .eq('company_id', profile.company_id)
       .eq('type', 'SALE')
-    
+
     if (profile?.role === 'staff' && profile?.location_id) {
       q = q.eq('location_id', profile.location_id)
     }
-    
+
     const { data } = await q.order('created_at', { ascending: false }).limit(10)
     setRecentSales(data || [])
   }
 
   function update(field, value) { setForm(f => ({ ...f, [field]: value })) }
-  function flash(type, text)    { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 5000) }
+  function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 5000) }
 
   const selectedProduct = products.find(p => p.id === form.product_id)
-  const specType        = selectedProduct?.spec_type || 'sph_add'
-  const isUtility       = specType === 'name_only'
-  const usesBase        = specType.startsWith('base_')
-  const totalAmount     = (Number(form.qty) * Number(form.unit_price)) || 0
-  const balance         = totalAmount - (Number(form.amount_paid) || 0)
+  const specType = selectedProduct?.spec_type || 'sph_add'
+  const isUtility = specType === 'name_only'
+  const usesBase = specType.startsWith('base_')
+  const totalAmount = (Number(form.qty) * Number(form.unit_price)) || 0
+  const balance = totalAmount - (Number(form.amount_paid) || 0)
 
   // Normalize base sph to unsigned whole-number format before any DB operation
   function normSph(sph, isBase) {
@@ -104,9 +104,9 @@ export default function Sales() {
 
   function getSpecs() {
     return {
-      sph:      isUtility ? null : normSph(form.sph, usesBase),
-      cyl:      isUtility ? null : (specType === 'sph_add' || usesBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null)),
-      axis:     isUtility ? null : (specType === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null),
+      sph: isUtility ? null : normSph(form.sph, usesBase),
+      cyl: isUtility ? null : (specType === 'sph_add' || usesBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null)),
+      axis: isUtility ? null : (specType === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null),
       addition: isUtility ? null : (specType === 'sph_cyl' || specType === 'base_only' ? null
         : (form.addition && form.addition !== '-' ? dbFormatAddition(form.addition, usesBase) : null)),
       name_key: isUtility ? selectedProduct?.name : null,
@@ -118,9 +118,9 @@ export default function Sales() {
     if (!sel || sel.spec_type === 'name_only' || !form.sph) return
     const isBase = sel.spec_type.startsWith('base_')
     const specs = {
-      sph:      normSph(form.sph, isBase),
-      cyl:      sel.spec_type === 'sph_add' || isBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null),
-      axis:     sel.spec_type === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null,
+      sph: normSph(form.sph, isBase),
+      cyl: sel.spec_type === 'sph_add' || isBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null),
+      axis: sel.spec_type === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null,
       addition: sel.spec_type === 'sph_cyl' || sel.spec_type === 'base_only' ? null
         : (form.addition && form.addition !== '-' ? dbFormatAddition(form.addition, isBase) : null),
       name_key: null,
@@ -136,9 +136,9 @@ export default function Sales() {
     if (!sel) { setStockLoading(false); return }
     const isBase = sel.spec_type.startsWith('base_')
     const specs = {
-      sph:      normSph(form.sph, isBase),
-      cyl:      sel.spec_type === 'name_only' || sel.spec_type === 'sph_add' || isBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null),
-      axis:     sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null),
+      sph: normSph(form.sph, isBase),
+      cyl: sel.spec_type === 'name_only' || sel.spec_type === 'sph_add' || isBase ? null : (form.cyl && form.cyl !== '-' ? form.cyl : null),
+      axis: sel.spec_type === 'name_only' ? null : (sel.spec_type === 'sph_cyl_axis_add' ? (form.axis && form.axis !== '-' ? form.axis : null) : null),
       addition: sel.spec_type === 'name_only' || sel.spec_type === 'sph_cyl' || sel.spec_type === 'base_only' ? null
         : (form.addition && form.addition !== '-' ? dbFormatAddition(form.addition, isBase) : null),
       name_key: sel.spec_type === 'name_only' ? sel.name : null,
@@ -153,109 +153,181 @@ export default function Sales() {
   async function handleSubmit(e) {
     e.preventDefault()
     const qty = Number(form.qty)
+
+    // ── Validation ────────────────────────────────────────────
     if (!form.product_id || !form.location_id) { flash('error', 'Product and location required'); return }
     if (!form.payment_method) { flash('error', 'Please select a payment method'); return }
     if (!Number(form.unit_price) || Number(form.unit_price) <= 0) { flash('error', 'Unit price is required'); return }
+
     if (!isUtility) {
       if (!form.sph) { flash('error', `Please select a ${usesBase ? 'Base' : 'SPH'} value`); return }
-      const usesAdd = ['sph_add','base_add','sph_cyl_axis_add'].includes(specType)
+      const usesAdd = ['sph_add', 'base_add', 'sph_cyl_axis_add'].includes(specType)
+      const needsCyl = ['sph_cyl', 'sph_cyl_axis_add'].includes(specType)
       if (usesAdd && !form.addition) { flash('error', 'Please select an Addition value'); return }
-      const needsCyl = ['sph_cyl','sph_cyl_axis_add'].includes(specType)
       if (needsCyl && !form.cyl) { flash('error', 'Please select a CYL value'); return }
       if (specType === 'sph_cyl_axis_add' && !form.axis) { flash('error', 'Please select an Axis value'); return }
     }
+
     if (!qty || qty <= 0) { flash('error', 'Qty must be a positive number'); return }
-    // Require customer name when there is a balance due
     if (balance > 0 && !form.customer_name.trim()) {
       flash('error', 'Customer name is required for credit sales'); return
     }
     if (availableStock !== null && qty > availableStock) {
       flash('error', `Oversell blocked — only ${availableStock} available`); return
     }
+
     setLoading(true)
     const specs = getSpecs()
-    const base  = supabase.from('stock').select('id, qty, allocated_qty').eq('product_id', form.product_id).eq('location_id', form.location_id)
-    const { data: stockRows } = await buildStockQuery(base, specs)
-    const totalAvailable = (stockRows || []).reduce((s, r) => s + (Number(r.qty) - Number(r.allocated_qty || 0)), 0)
+
+    // ── Re-verify stock server-side ───────────────────────────
+    const stockBase = supabase
+      .from('stock').select('id, qty, allocated_qty')
+      .eq('product_id', form.product_id)
+      .eq('location_id', form.location_id)
+    const { data: stockRows, error: stockFetchErr } = await buildStockQuery(stockBase, specs)
+
+    if (stockFetchErr) {
+      flash('error', `Stock check failed: ${stockFetchErr.message}`)
+      setLoading(false); return
+    }
+
+    const totalAvailable = (stockRows || []).reduce(
+      (s, r) => s + (Number(r.qty) - Number(r.allocated_qty || 0)), 0
+    )
     if (!stockRows?.length || totalAvailable < qty) {
       flash('error', `Oversell blocked — only ${totalAvailable} available`)
       setAvailableStock(totalAvailable); setLoading(false); return
     }
 
-    // Deduct stock — spread across rows highest-qty first (handles duplicate rows gracefully)
+    // ── Deduct stock (highest-qty row first) ──────────────────
+    // Track every deduction so we can roll back precisely if the
+    // transaction insert fails later.
     const sortedRows = [...stockRows].sort((a, b) => Number(b.qty) - Number(a.qty))
+    const deductedRows = [] // { id, originalQty }
     let toDeduct = qty
+
     for (const row of sortedRows) {
       if (toDeduct <= 0) break
       const avail = Number(row.qty) - Number(row.allocated_qty || 0)
       if (avail <= 0) continue
       const take = Math.min(avail, toDeduct)
-      const { error: stockErr } = await supabase.from('stock').update({ qty: Number(row.qty) - take, updated_at: new Date() }).eq('id', row.id)
-      if (stockErr) { flash('error', `Stock update failed: ${stockErr.message}`); setLoading(false); return }
+      const newQty = Number(row.qty) - take
+
+      const { error: stockErr } = await supabase
+        .from('stock')
+        .update({ qty: newQty, updated_at: new Date() })
+        .eq('id', row.id)
+
+      if (stockErr) {
+        // Roll back rows already deducted in this loop
+        for (const d of deductedRows) {
+          await supabase.from('stock')
+            .update({ qty: d.originalQty, updated_at: new Date() })
+            .eq('id', d.id)
+        }
+        flash('error', `Stock update failed: ${stockErr.message}`)
+        setLoading(false); return
+      }
+
+      deductedRows.push({ id: row.id, originalQty: Number(row.qty) })
       toDeduct -= take
     }
 
-    // Upsert customer
+    // ── Upsert customer ───────────────────────────────────────
     let customerId = null
     if (form.customer_name || form.customer_phone) {
-      const { data: existingCust } = await supabase.from('customers').select('id')
+      const { data: existingCust } = await supabase
+        .from('customers').select('id')
         .eq('company_id', profile.company_id)
         .eq('name', form.customer_name || 'Unknown')
         .eq('phone', form.customer_phone || '')
         .maybeSingle()
-      if (existingCust) customerId = existingCust.id
-      else {
-        const { data: newCust } = await supabase.from('customers').insert({
-          company_id: profile.company_id, name: form.customer_name || 'Unknown', phone: form.customer_phone || ''
-        }).select('id').single()
+
+      if (existingCust) {
+        customerId = existingCust.id
+      } else {
+        const { data: newCust } = await supabase
+          .from('customers')
+          .insert({ company_id: profile.company_id, name: form.customer_name || 'Unknown', phone: form.customer_phone || '' })
+          .select('id').single()
         if (newCust) customerId = newCust.id
       }
     }
 
-    // Insert transaction — capture ID for debtors linkage
-    const { data: txn, error: txnErr } = await supabase.from('transactions').insert({
-      company_id: profile.company_id, type: 'SALE',
-      product_id: form.product_id, location_id: form.location_id,
-      ...specs, qty,
-      unit_price:     Number(form.unit_price),
-      total_amount:   totalAmount || null,
-      amount_paid:    Number(form.amount_paid) || 0,
-      balance:        balance > 0 ? balance : null,
-      payment_method: form.payment_method,
-      customer_id:    customerId,
-      customer_name:  form.customer_name || null,
-      customer_phone: form.customer_phone || null,
-      notes:          form.notes || null,
-      created_by:     profile.id,
-    }).select('id').single()
+    // ── Insert transaction ────────────────────────────────────
+    const { data: txn, error: txnErr } = await supabase
+      .from('transactions')
+      .insert({
+        company_id: profile.company_id,
+        type: 'SALE',
+        product_id: form.product_id,
+        location_id: form.location_id,
+        ...specs,
+        qty,
+        unit_price: Number(form.unit_price),
+        total_amount: totalAmount || null,
+        amount_paid: Number(form.amount_paid) || 0,
+        balance: balance > 0 ? balance : null,
+        payment_method: form.payment_method,
+        customer_id: customerId,
+        customer_name: form.customer_name || null,
+        customer_phone: form.customer_phone || null,
+        notes: form.notes || null,
+        created_by: profile.id,
+      })
+      .select('id')
+      .single()
 
     if (txnErr) {
-      // Roll back stock deduction if transaction insert fails
-      await supabase.from('stock').update({ qty: stockRow.qty, updated_at: new Date() }).eq('id', stockRow.id)
+      // ── Full rollback — restore every row we touched ────────
+      for (const d of deductedRows) {
+        await supabase.from('stock')
+          .update({ qty: d.originalQty, updated_at: new Date() })
+          .eq('id', d.id)
+      }
       flash('error', `Sale failed: ${txnErr.message}`)
       setLoading(false); return
     }
 
-    // Create debtors record if there is an outstanding balance
+    // ── Create debtor record if balance is outstanding ────────
     if (balance > 0 && txn?.id) {
-      await supabase.from('debtors').insert({
-        company_id:    profile.company_id,
+      const { error: debtErr } = await supabase.from('debtors').insert({
+        company_id: profile.company_id,
         transaction_id: txn.id,
-        customer_id:   customerId,
+        customer_id: customerId,
         customer_name: form.customer_name,
         customer_phone: form.customer_phone || null,
-        total_amount:  totalAmount,
-        amount_paid:   Number(form.amount_paid) || 0,
-        balance:       balance,
-        is_settled:    false,
+        total_amount: totalAmount,
+        amount_paid: Number(form.amount_paid) || 0,
+        balance,
+        is_settled: false,
       })
+
+      if (debtErr) {
+        // Sale + stock are already committed — don't roll back.
+        // Surface a clear warning so staff can add the debt manually.
+        flash('error', `Sale recorded but debt entry failed: ${debtErr.message}. Add this balance manually in Debtors.`)
+        setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
+        setAvailableStock(v => v !== null ? v - qty : null)
+        fetchRecentSales()
+        setLoading(false); return
+      }
     }
 
+    // ── Audit log ─────────────────────────────────────────────
     await supabase.from('audit_log').insert({
-      company_id: profile.company_id, user_id: profile.id,
-      status: 'SUCCESS', action: 'SALE',
-      details: { product: selectedProduct?.name, location: locations.find(l => l.id === form.location_id)?.code, ...specs, qty, total_amount: totalAmount },
+      company_id: profile.company_id,
+      user_id: profile.id,
+      status: 'SUCCESS',
+      action: 'SALE',
+      details: {
+        product: selectedProduct?.name,
+        location: locations.find(l => l.id === form.location_id)?.code,
+        ...specs, qty,
+        total_amount: totalAmount,
+      },
     })
+
     flash('success', `Sale recorded — ${selectedProduct?.name} ×${qty}${balance > 0 ? ` | Balance due: ₦${balance.toLocaleString()}` : ''}`)
     setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
     setAvailableStock(v => v !== null ? v - qty : null)
@@ -286,9 +358,9 @@ export default function Sales() {
     // This ensures the stock query matches even if the transaction was recorded pre-normalization
     const isBaseProduct = sale.products?.spec_type?.startsWith('base_')
     const specs = {
-      sph:      isBaseProduct ? (sale.sph || '').replace(/^\+/, '') : sale.sph,
-      cyl:      sale.cyl,
-      axis:     sale.axis,
+      sph: isBaseProduct ? (sale.sph || '').replace(/^\+/, '') : sale.sph,
+      cyl: sale.cyl,
+      axis: sale.axis,
       addition: isBaseProduct ? (sale.addition || '').replace(/^\+/, '') : sale.addition,
       name_key: sale.name_key,
     }
@@ -305,8 +377,8 @@ export default function Sales() {
     } else {
       // Stock row was deleted or never existed — recreate it
       await supabase.from('stock').insert({
-        company_id:  profile.company_id,
-        product_id:  sale.product_id,
+        company_id: profile.company_id,
+        product_id: sale.product_id,
         location_id: sale.location_id,
         ...specs,
         qty: sale.qty,
@@ -334,27 +406,27 @@ export default function Sales() {
 
     // Write SALE_VOID transaction
     await supabase.from('transactions').insert({
-      company_id:  profile.company_id,
-      type:        'SALE_VOID',
-      product_id:  sale.product_id,
+      company_id: profile.company_id,
+      type: 'SALE_VOID',
+      product_id: sale.product_id,
       location_id: sale.location_id,
       ...specs,
-      qty:         sale.qty,
-      created_by:  profile.id,
-      notes:       `Return/void of sale ${sale.id}`,
+      qty: sale.qty,
+      created_by: profile.id,
+      notes: `Return/void of sale ${sale.id}`,
     })
 
     await supabase.from('audit_log').insert({
       company_id: profile.company_id, user_id: profile.id,
       status: 'SUCCESS', action: 'SALE_VOID',
       details: {
-        voided_sale:    sale.id,
-        product:        sale.products?.name,
-        location:       sale.locations?.code,
-        qty:            sale.qty,
-        customer:       sale.customer_name || null,
-        refund_amount:  sale.total_amount || null,
-        debt_cleared:   debtorRecord ? true : false,
+        voided_sale: sale.id,
+        product: sale.products?.name,
+        location: sale.locations?.code,
+        qty: sale.qty,
+        customer: sale.customer_name || null,
+        refund_amount: sale.total_amount || null,
+        debt_cleared: debtorRecord ? true : false,
       },
     })
 
@@ -446,16 +518,15 @@ export default function Sales() {
             )}
 
             {/* Stock indicator */}
-            <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
-              availableStock === null ? 'bg-slate-50 text-slate-400' :
-              availableStock === 0    ? 'bg-red-50 border border-red-200 text-red-700' :
-              availableStock <= 5     ? 'bg-amber-50 border border-amber-200 text-amber-700' :
-                                        'bg-green-50 border border-green-200 text-green-700'
-            }`}>
-              {stockLoading         ? 'Checking...' :
-               availableStock === null ? 'Select product and location' :
-               availableStock === 0    ? 'Out of stock at this location' :
-                                         `Available: ${availableStock} units`}
+            <div className={`rounded-xl px-4 py-3 text-sm font-medium ${availableStock === null ? 'bg-slate-50 text-slate-400' :
+                availableStock === 0 ? 'bg-red-50 border border-red-200 text-red-700' :
+                  availableStock <= 5 ? 'bg-amber-50 border border-amber-200 text-amber-700' :
+                    'bg-green-50 border border-green-200 text-green-700'
+              }`}>
+              {stockLoading ? 'Checking...' :
+                availableStock === null ? 'Select product and location' :
+                  availableStock === 0 ? 'Out of stock at this location' :
+                    `Available: ${availableStock} units`}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -535,11 +606,10 @@ export default function Sales() {
             </div>
 
             {msg.text && (
-              <div className={`text-sm rounded-xl px-4 py-3 ${
-                msg.type === 'error'
+              <div className={`text-sm rounded-xl px-4 py-3 ${msg.type === 'error'
                   ? 'bg-red-50 border border-red-200 text-red-700'
                   : 'bg-green-50 border border-green-200 text-green-700'
-              }`}>
+                }`}>
                 {msg.text}
               </div>
             )}
