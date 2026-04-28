@@ -289,21 +289,27 @@ export default function Sales() {
 
     // ── Create debtor record if balance is outstanding ────────
     if (balance > 0 && txn?.id) {
+      // A DB trigger may have already auto-created a nameless debtor row for
+      // this transaction. Delete it before we insert the properly-named record
+      // so we never end up with two rows for the same sale.
+      await supabase.from('debtors')
+        .delete()
+        .eq('transaction_id', txn.id)
+        .is('customer_name', null)
+
       const { error: debtErr } = await supabase.from('debtors').insert({
-        company_id: profile.company_id,
+        company_id:     profile.company_id,
         transaction_id: txn.id,
-        customer_id: customerId,
-        customer_name: form.customer_name,
+        customer_id:    customerId,
+        customer_name:  form.customer_name || null,
         customer_phone: form.customer_phone || null,
-        total_amount: totalAmount,
-        amount_paid: Number(form.amount_paid) || 0,
+        total_amount:   totalAmount,
+        amount_paid:    Number(form.amount_paid) || 0,
         balance,
-        is_settled: false,
+        is_settled:     false,
       })
 
       if (debtErr) {
-        // Sale + stock are already committed — don't roll back.
-        // Surface a clear warning so staff can add the debt manually.
         flash('error', `Sale recorded but debt entry failed: ${debtErr.message}. Add this balance manually in Debtors.`)
         setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
         setAvailableStock(v => v !== null ? v - qty : null)
@@ -383,22 +389,23 @@ export default function Sales() {
       })
     }
 
-    // Clear linked debtors record if it exists
-    const { data: debtorRecord } = await supabase.from('debtors')
+    // Clear ALL linked debtor records for this transaction.
+    // Use a multi-row fetch (not maybeSingle) because a DB trigger may have
+    // created a duplicate row — maybeSingle() would error and settle nothing.
+    const { data: debtorRows } = await supabase.from('debtors')
       .select('id, balance, amount_paid')
       .eq('company_id', profile.company_id)
       .eq('transaction_id', sale.id)
-      .maybeSingle()
 
-    if (debtorRecord) {
-      const hadPartialPayment = Number(debtorRecord.amount_paid) > 0
-      // Mark debt as settled — void cancels the obligation regardless
+    if (debtorRows?.length) {
+      const totalPaid = debtorRows.reduce((s, r) => s + Number(r.amount_paid || 0), 0)
+      // Settle every row — void cancels the whole obligation
       await supabase.from('debtors')
         .update({ is_settled: true, balance: 0, updated_at: new Date() })
-        .eq('id', debtorRecord.id)
-      if (hadPartialPayment) {
-        // Warn staff that cash was already collected and needs manual handling
-        flash('warn', `⚠️ ₦${Number(debtorRecord.amount_paid).toLocaleString()} was already collected on this debt — refund manually (cash or store credit).`)
+        .eq('transaction_id', sale.id)
+        .eq('company_id', profile.company_id)
+      if (totalPaid > 0) {
+        flash('warn', `⚠️ ₦${totalPaid.toLocaleString()} was already collected on this debt — refund manually (cash or store credit).`)
       }
     }
 

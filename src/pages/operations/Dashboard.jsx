@@ -79,19 +79,20 @@ export default function Dashboard() {
       .eq('company_id', profile.company_id)
       .eq('is_settled', false)
 
-    let revenue = 0, units = 0, sales = 0
-    ;(allTxns || []).forEach(r => {
-      const sign = r.type === 'SALE_VOID' ? -1 : 1
-      revenue += sign * (Number(r.total_amount) || 0)
-      units   += sign * (Number(r.qty) || 0)
-      if (r.type === 'SALE') sales += 1
-      else sales = Math.max(0, sales - 1) // each void cancels one sale
-    })
+    // Count each type independently to avoid order-dependency bugs
+    const saleRows = (allTxns || []).filter(r => r.type === 'SALE')
+    const voidRows = (allTxns || []).filter(r => r.type === 'SALE_VOID')
+
+    const revenue = saleRows.reduce((s, r) => s + (Number(r.total_amount) || 0), 0)
+                  - voidRows.reduce((s, r) => s + (Number(r.total_amount) || 0), 0)
+    const units   = saleRows.reduce((s, r) => s + (Number(r.qty) || 0), 0)
+                  - voidRows.reduce((s, r) => s + (Number(r.qty) || 0), 0)
+    const sales   = Math.max(0, saleRows.length - voidRows.length)
 
     setTodayStats({
       revenue:     Math.max(0, revenue),
       units:       Math.max(0, units),
-      sales:       Math.max(0, sales),
+      sales,
       outstanding: (outstanding || []).reduce((s, r) => s + Number(r.balance), 0),
     })
   }
