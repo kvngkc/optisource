@@ -402,16 +402,20 @@ export default function Sales() {
       }
     }
 
-    // Write SALE_VOID transaction
+    // Write SALE_VOID transaction — mirror the financial fields from the
+    // original sale so the dashboard can net revenue correctly.
     await supabase.from('transactions').insert({
-      company_id: profile.company_id,
-      type: 'SALE_VOID',
-      product_id: sale.product_id,
-      location_id: sale.location_id,
+      company_id:   profile.company_id,
+      type:         'SALE_VOID',
+      product_id:   sale.product_id,
+      location_id:  sale.location_id,
       ...specs,
-      qty: sale.qty,
-      created_by: profile.id,
-      notes: `Return/void of sale ${sale.id}`,
+      qty:          sale.qty,
+      unit_price:   sale.unit_price   || null,
+      total_amount: sale.total_amount || null,
+      amount_paid:  sale.amount_paid  || null,
+      created_by:   profile.id,
+      notes:        `Return/void of sale ${sale.id}`,
     })
 
     await supabase.from('audit_log').insert({
