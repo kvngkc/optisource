@@ -213,6 +213,7 @@ export default function Debtors() {
                       <label className="block text-xs font-medium text-slate-600 mb-1">Amount (₦)</label>
                       <input type="number" min="1" required value={payForm.amount}
                         onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
+                        onWheel={e => e.target.blur()}
                         placeholder={`Max ₦${Number(selected.balance).toLocaleString()}`}
                         className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
                     </div>

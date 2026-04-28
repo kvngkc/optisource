@@ -168,7 +168,12 @@ export default function Sales() {
       if (specType === 'sph_cyl_axis_add' && !form.axis) { flash('error', 'Please select an Axis value'); return }
     }
 
-    if (!qty || qty <= 0) { flash('error', 'Qty must be a positive number'); return }
+    if (!qty || qty < 0.5) { flash('error', 'Qty must be at least 0.5'); return }
+    if (qty % 0.5 !== 0) { flash('error', 'Qty must be in steps of 0.5 (e.g. 1, 1.5, 2)'); return }
+    const amtPaid = Number(form.amount_paid) || 0
+    if (totalAmount > 0 && amtPaid > totalAmount) {
+      flash('error', `Overpayment blocked — amount paid (₦${amtPaid.toLocaleString()}) exceeds total (₦${totalAmount.toLocaleString()})`); return
+    }
     if (balance > 0 && !form.customer_name.trim()) {
       flash('error', 'Customer name is required for credit sales'); return
     }
@@ -558,10 +563,20 @@ export default function Sales() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Qty</label>
-                <input type="number" min="1" required value={form.qty}
-                  onChange={e => update('qty', e.target.value)} placeholder="0"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
+                <label className="block text-sm font-medium text-slate-700 mb-1">Qty <span className="text-xs text-slate-400 font-normal">(0.5 = half pair)</span></label>
+                <div className="flex items-center gap-1">
+                  <button type="button"
+                    onClick={() => update('qty', Math.max(0.5, (Number(form.qty) || 0) - 0.5))}
+                    className="flex-shrink-0 w-9 h-12 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 text-lg font-bold transition-colors flex items-center justify-center">−</button>
+                  <input type="number" min="0.5" step="0.5" required value={form.qty}
+                    onChange={e => update('qty', e.target.value)}
+                    onWheel={e => e.target.blur()}
+                    placeholder="0"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base text-center" />
+                  <button type="button"
+                    onClick={() => update('qty', (Number(form.qty) || 0) + 0.5)}
+                    className="flex-shrink-0 w-9 h-12 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 text-lg font-bold transition-colors flex items-center justify-center">+</button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -569,7 +584,9 @@ export default function Sales() {
                   {form.unit_price && <span className="text-xs text-green-600 ml-1">auto-filled</span>}
                 </label>
                 <input type="number" min="0" value={form.unit_price}
-                  onChange={e => update('unit_price', e.target.value)} placeholder="0"
+                  onChange={e => update('unit_price', e.target.value)}
+                  onWheel={e => e.target.blur()}
+                  placeholder="0"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
               </div>
             </div>
@@ -585,7 +602,9 @@ export default function Sales() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Amount paid (₦)</label>
                 <input type="number" min="0" value={form.amount_paid}
-                  onChange={e => update('amount_paid', e.target.value)} placeholder="0"
+                  onChange={e => update('amount_paid', e.target.value)}
+                  onWheel={e => e.target.blur()}
+                  placeholder="0"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
               </div>
               <div>

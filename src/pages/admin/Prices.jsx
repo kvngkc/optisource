@@ -224,7 +224,9 @@ export default function Prices() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Price (₦)</label>
                   <input type="number" min="0" required value={form.price}
-                    onChange={e => update('price', e.target.value)} placeholder="e.g. 5000"
+                    onChange={e => update('price', e.target.value)}
+                    onWheel={e => e.target.blur()}
+                    placeholder="e.g. 5000"
                     className={nc} />
                 </div>
 
@@ -339,7 +341,9 @@ export default function Prices() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Price (₦)</label>
                   <input type="number" min="0" required value={rForm.price}
-                    onChange={e => updateR('price', e.target.value)} placeholder="e.g. 7000"
+                    onChange={e => updateR('price', e.target.value)}
+                    onWheel={e => e.target.blur()}
+                    placeholder="e.g. 7000"
                     className={nc} />
                 </div>
 
