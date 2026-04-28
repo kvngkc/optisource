@@ -64,11 +64,12 @@ export default function Dashboard() {
     const start = new Date(); start.setHours(0, 0, 0, 0)
     const end   = new Date(); end.setHours(23, 59, 59, 999)
 
-    const { data: sales } = await supabase
+    // Fetch both SALE and SALE_VOID so we can net the values correctly
+    const { data: allTxns } = await supabase
       .from('transactions')
-      .select('qty, total_amount')
+      .select('type, qty, total_amount')
       .eq('company_id', profile.company_id)
-      .eq('type', 'SALE')
+      .in('type', ['SALE', 'SALE_VOID'])
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString())
 
@@ -78,10 +79,19 @@ export default function Dashboard() {
       .eq('company_id', profile.company_id)
       .eq('is_settled', false)
 
+    let revenue = 0, units = 0, sales = 0
+    ;(allTxns || []).forEach(r => {
+      const sign = r.type === 'SALE_VOID' ? -1 : 1
+      revenue += sign * (Number(r.total_amount) || 0)
+      units   += sign * (Number(r.qty) || 0)
+      if (r.type === 'SALE') sales += 1
+      else sales = Math.max(0, sales - 1) // each void cancels one sale
+    })
+
     setTodayStats({
-      revenue:     (sales || []).reduce((s, r) => s + (Number(r.total_amount) || 0), 0),
-      units:       (sales || []).reduce((s, r) => s + (Number(r.qty) || 0), 0),
-      sales:       (sales || []).length,
+      revenue:     Math.max(0, revenue),
+      units:       Math.max(0, units),
+      sales:       Math.max(0, sales),
       outstanding: (outstanding || []).reduce((s, r) => s + Number(r.balance), 0),
     })
   }
@@ -90,47 +100,63 @@ export default function Dashboard() {
     const daysAgo = new Date()
     daysAgo.setDate(daysAgo.getDate() - Number(period))
 
-    const { data } = await supabase
+    // Include SALE_VOID so the chart reflects net revenue after voids
+    let q = supabase
       .from('transactions')
-      .select('created_at, total_amount, qty')
+      .select('created_at, type, total_amount, qty')
       .eq('company_id', profile.company_id)
-      .eq('type', 'SALE')
+      .in('type', ['SALE', 'SALE_VOID'])
       .gte('created_at', daysAgo.toISOString())
       .order('created_at')
 
-    // Group by date
+    if (locationFilter !== 'all') q = q.eq('location_id', locationFilter)
+
+    const { data } = await q
+
+    // Group by date, netting voids against sales
     const byDate = {}
     ;(data || []).forEach(t => {
       const date = new Date(t.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
       if (!byDate[date]) byDate[date] = { date, revenue: 0, units: 0 }
-      byDate[date].revenue += Number(t.total_amount) || 0
-      byDate[date].units   += Number(t.qty) || 0
+      const sign = t.type === 'SALE_VOID' ? -1 : 1
+      byDate[date].revenue += sign * (Number(t.total_amount) || 0)
+      byDate[date].units   += sign * (Number(t.qty) || 0)
     })
 
-    setRevenueChart(Object.values(byDate))
+    // Clamp negatives to zero (e.g. if void was recorded on same day as sale)
+    const chart = Object.values(byDate).map(d => ({
+      ...d,
+      revenue: Math.max(0, d.revenue),
+      units:   Math.max(0, d.units),
+    }))
+
+    setRevenueChart(chart)
   }
 
   async function loadTopProducts() {
     const daysAgo = new Date()
     daysAgo.setDate(daysAgo.getDate() - Number(period))
 
+    // Include SALE_VOID so voided sales don't inflate top-product rankings
     const { data } = await supabase
       .from('transactions')
-      .select('product_id, qty, total_amount, products(name)')
+      .select('product_id, type, qty, total_amount, products(name)')
       .eq('company_id', profile.company_id)
-      .eq('type', 'SALE')
+      .in('type', ['SALE', 'SALE_VOID'])
       .gte('created_at', daysAgo.toISOString())
 
     const byProduct = {}
     ;(data || []).forEach(t => {
       const name = t.products?.name || t.product_id
       if (!byProduct[name]) byProduct[name] = { name, units: 0, revenue: 0 }
-      byProduct[name].units   += Number(t.qty) || 0
-      byProduct[name].revenue += Number(t.total_amount) || 0
+      const sign = t.type === 'SALE_VOID' ? -1 : 1
+      byProduct[name].units   += sign * (Number(t.qty) || 0)
+      byProduct[name].revenue += sign * (Number(t.total_amount) || 0)
     })
 
     setTopProducts(
       Object.values(byProduct)
+        .filter(p => p.units > 0)  // hide products whose total was zeroed out
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 8)
     )
