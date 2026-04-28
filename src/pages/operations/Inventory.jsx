@@ -902,16 +902,61 @@ function buildImportStockQuery(base, { sph, cyl, axis, addition, name_key }) {
   return q
 }
 
+// ── Spec value normalizer ─────────────────────────────────────
+// Converts any common user input to the canonical ±NNN 3-digit
+// zero-padded format the database stores.
+//
+//   '-25'   → '-025'  (missing leading zero)
+//   '-025'  → '-025'  (already correct)
+//   '-0.25' → '-025'  (decimal diopter notation)
+//   '+1.25' → '+125'  (decimal diopter notation)
+//   '+2'    → '+200'  (small integer treated as full diopters)
+//   '+200'  → '+200'  (already correct)
+//   'Plano' → 'Plano' (pass-through)
+function normalizeSpecValue(raw) {
+  if (!raw) return raw
+  const trimmed = raw.trim()
+  if (!trimmed) return trimmed
+  if (trimmed.toLowerCase() === 'plano') return 'Plano'
+
+  let sign = '+'
+  let rest = trimmed
+  if (rest.startsWith('+')) { rest = rest.slice(1) }
+  else if (rest.startsWith('-')) { sign = '-'; rest = rest.slice(1) }
+
+  const num = parseFloat(rest)
+  if (isNaN(num)) return trimmed   // unrecognised — pass through
+  if (num === 0) return 'Plano'
+
+  let internal
+  if (rest.includes('.')) {
+    // Decimal diopter notation: 0.25 → 25, 1.25 → 125
+    internal = Math.round(num * 100)
+  } else {
+    // Integer notation.
+    // < 25: treat as full-diopter shorthand (+6 = 6.00D = 600 internal).
+    // >= 25: already in internal units (25 = 0.25D, 200 = 2.00D).
+    internal = num < 25 ? Math.round(num * 100) : Math.round(num)
+  }
+
+  if (internal === 0) return 'Plano'
+  return sign + String(internal).padStart(3, '0')
+}
+
 function buildImportSpecs(row, tpl) {
   if (tpl.isUtility) return { sph: null, cyl: null, axis: null, addition: null, name_key: (row.product_name || '').trim() || null }
-  let sphVal = (row[tpl.sphKey] || '').trim() || null
-  // Base templates: strip leading '+' so '+200' and '200' both normalise to '200'
+  const rawSph = (row[tpl.sphKey] || '').trim() || null
+  let sphVal = rawSph ? normalizeSpecValue(rawSph) : null
+  // Base templates: store as unsigned (strip leading '+')
   if (tpl.sphKey === 'base' && sphVal) sphVal = sphVal.replace(/^\+/, '')
+  const rawCyl = (row.cyl  || '').trim()
+  const rawAdd = (row.addition || '').trim()
+  const rawAxis = (row.axis || '').trim()
   return {
-    sph: sphVal,
-    cyl: tpl.hasCyl ? ((row.cyl && row.cyl !== '-') ? row.cyl.trim() : null) : null,
-    axis: tpl.hasAxis ? ((row.axis && row.axis !== '-') ? row.axis.trim() : null) : null,
-    addition: tpl.hasAdd ? ((row.addition && row.addition !== '-') ? row.addition.trim() : null) : null,
+    sph:      sphVal,
+    cyl:      tpl.hasCyl  ? ((rawCyl  && rawCyl  !== '-') ? normalizeSpecValue(rawCyl)  : null) : null,
+    axis:     tpl.hasAxis ? ((rawAxis && rawAxis !== '-') ? rawAxis                       : null) : null,
+    addition: tpl.hasAdd  ? ((rawAdd  && rawAdd  !== '-') ? normalizeSpecValue(rawAdd)   : null) : null,
     name_key: null,
   }
 }
@@ -1165,6 +1210,29 @@ function ImportDataTab({ profile }) {
         </div>
       </div>
 
+      {/* ── Format reminder for signed spec types (finished lenses, SV, etc.) ── */}
+      {!template?.isUtility && template?.sphKey !== 'base' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-500 text-lg flex-shrink-0 mt-0.5">⚠</span>
+          <div className="text-xs text-amber-900 leading-relaxed">
+            <p className="font-semibold mb-1">Number format for SPH, CYL and Addition</p>
+            <p className="mb-1.5">
+              Use <span className="font-mono font-bold bg-amber-100 px-1 rounded">sign + 3 digits</span> — e.g.{' '}
+              <span className="font-mono text-green-700 font-semibold">-025</span>,{' '}
+              <span className="font-mono text-green-700 font-semibold">+200</span>,{' '}
+              <span className="font-mono text-green-700 font-semibold">+125</span>.
+            </p>
+            <p className="text-amber-700">
+              The importer auto-corrects common variants:{' '}
+              <span className="font-mono">-25 → -025</span> ·{' '}
+              <span className="font-mono">-0.25 → -025</span> ·{' '}
+              <span className="font-mono">+2 → +200</span> ·{' '}
+              <span className="font-mono">Plano</span> (case-insensitive)
+            </p>
+          </div>
+        </div>
+      )}
+
       <div
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
@@ -1180,7 +1248,14 @@ function ImportDataTab({ profile }) {
       {fileError && <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-xs text-red-600">{fileError}</div>}
       <div className="bg-white border border-slate-200 rounded-2xl p-5">
         <p className="text-xs font-semibold text-slate-700 mb-3">Expected columns</p>
-        <div className="flex flex-wrap gap-2">{csvCols.map(col => (<code key={col} className="bg-slate-100 px-2 py-1 rounded-lg font-mono text-xs text-slate-700">{col}</code>))}</div>
+        <div className="flex flex-wrap gap-2 mb-3">{csvCols.map(col => (<code key={col} className="bg-slate-100 px-2 py-1 rounded-lg font-mono text-xs text-slate-700">{col}</code>))}</div>
+        {!template?.isUtility && (
+          <p className="text-xs text-slate-400">
+            {template?.sphKey === 'base'
+              ? 'Base values: unsigned integers — e.g. 200, 400 (no sign needed).'
+              : 'Signed values: use ±NNN format — e.g. -025, +200, +125, Plano.'}
+          </p>
+        )}
       </div>
     </div>
   )

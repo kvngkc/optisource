@@ -72,14 +72,30 @@ export default function Staff() {
   async function changeRole(userId, role) {
     setSaving(userId)
     setError('')
+    setSuccess('')
     const { error: err } = await supabase
       .from('profiles')
       .update({ role })
       .eq('id', userId)
     if (err) {
       setError('Failed to update role: ' + err.message)
+      setSaving(null)
+      return
+    }
+    // Re-fetch the row to confirm the DB actually persisted the change.
+    // Supabase RLS can silently return no error but update 0 rows,
+    // which would cause the local state to show the new role but revert on refresh.
+    const { data: updated } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle()
+    if (updated?.role !== role) {
+      setError('Role could not be updated — you may not have permission. Ask your admin to run the staff RLS migration.')
     } else {
       setStaff(s => s.map(m => m.id === userId ? { ...m, role } : m))
+      setSuccess('Role updated.')
+      setTimeout(() => setSuccess(''), 3000)
     }
     setSaving(null)
   }
