@@ -289,15 +289,16 @@ export default function Sales() {
 
     // ── Create debtor record if balance is outstanding ────────
     if (balance > 0 && txn?.id) {
-      // A DB trigger may have already auto-created a nameless debtor row for
-      // this transaction. Delete it before we insert the properly-named record
-      // so we never end up with two rows for the same sale.
-      await supabase.from('debtors')
-        .delete()
+      // A DB trigger may have auto-created a nameless row for this transaction
+      // the moment it was inserted. We can't delete it (RLS blocks deletes on
+      // trigger-owned rows), so instead we fetch whatever exists and UPDATE the
+      // first row with real customer data, or INSERT fresh if nothing is there.
+      const { data: existingRows } = await supabase
+        .from('debtors')
+        .select('id')
         .eq('transaction_id', txn.id)
-        .is('customer_name', null)
 
-      const { error: debtErr } = await supabase.from('debtors').insert({
+      const debtPayload = {
         company_id:     profile.company_id,
         transaction_id: txn.id,
         customer_id:    customerId,
@@ -307,7 +308,24 @@ export default function Sales() {
         amount_paid:    Number(form.amount_paid) || 0,
         balance,
         is_settled:     false,
-      })
+      }
+
+      let debtErr
+      if (existingRows?.length) {
+        // Update the first (trigger-created) row in place, then delete any extras
+        const [primary, ...extras] = existingRows
+        ;({ error: debtErr } = await supabase.from('debtors')
+          .update(debtPayload)
+          .eq('id', primary.id))
+        // Remove any additional duplicate rows
+        if (extras.length) {
+          await supabase.from('debtors')
+            .delete()
+            .in('id', extras.map(r => r.id))
+        }
+      } else {
+        ;({ error: debtErr } = await supabase.from('debtors').insert(debtPayload))
+      }
 
       if (debtErr) {
         flash('error', `Sale recorded but debt entry failed: ${debtErr.message}. Add this balance manually in Debtors.`)
@@ -435,7 +453,7 @@ export default function Sales() {
         qty: sale.qty,
         customer: sale.customer_name || null,
         refund_amount: sale.total_amount || null,
-        debt_cleared: debtorRecord ? true : false,
+        debt_cleared: debtorRows?.length > 0,
       },
     })
 
