@@ -588,6 +588,11 @@ export default function Sales() {
                   onWheel={e => e.target.blur()}
                   placeholder="0"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 text-base" />
+                {form.unit_price && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    ⚠ Confirm this price is correct before recording the sale.
+                  </p>
+                )}
               </div>
             </div>
 

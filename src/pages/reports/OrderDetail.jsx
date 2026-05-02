@@ -117,7 +117,8 @@ export default function OrderDetail() {
         }
         
         const ext = payloadToUpload.name.split('.').pop()
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
+        const uuid = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 15)
+        const fileName = `${uuid}.${ext}`
         
         const { data, error } = await supabase.storage.from('order-attachments').upload(fileName, payloadToUpload)
         if (error || !data) {
