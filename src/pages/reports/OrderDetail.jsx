@@ -135,7 +135,7 @@ export default function OrderDetail() {
       const senderRole = profile?.role || 'optician'
       const senderId   = profile?.id || order?.optician_id || null
 
-      await supabase.from('order_messages').insert({
+      const { error: insertErr } = await supabase.from('order_messages').insert({
         order_id:    id,
         sender_id:   senderId,
         sender_name: senderName,
@@ -143,6 +143,11 @@ export default function OrderDetail() {
         message:     msgText.trim() || null,
         image_url:   imageUrl,
       })
+      if (insertErr) {
+        alert("Failed to send message: " + insertErr.message)
+        setSending(false)
+        return
+      }
       setMsgText(''); setImageFile(null)
       
       // Refresh messages
