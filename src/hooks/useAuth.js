@@ -18,12 +18,18 @@ export function useAuth() {
       }
     })
 
-    // Listen for auth changes (login, logout, token refresh)
+    // Listen for auth changes (login, logout, token refresh).
+    // The callback must stay synchronous and must not call other Supabase
+    // methods directly — doing so can deadlock the client's auth lock and
+    // leave every later query (e.g. recording a sale) hanging forever.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (session?.user) {
           setUser(session.user)
-          fetchProfile(session.user.id)
+          // Initial session is handled by getSession(); token refreshes
+          // don't change the profile, so skip the redundant refetch.
+          if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return
+          setTimeout(() => fetchProfile(session.user.id), 0)
         } else {
           setUser(null)
           setProfile(null)

@@ -74,7 +74,7 @@ export default function Sales() {
   async function fetchRecentSales() {
     let q = supabase
       .from('transactions')
-      .select('*, products(name), locations(name, code)')
+      .select('*, products(name, spec_type), locations(name, code)')
       .eq('company_id', profile.company_id)
       .eq('type', 'SALE')
 
@@ -184,6 +184,65 @@ export default function Sales() {
     setLoading(true)
     const specs = getSpecs()
 
+    try {
+      // ── Atomic path: one DB transaction for stock + sale + debtor ──
+      const { error: rpcErr } = await supabase.rpc('record_sale', {
+        p_company_id: profile.company_id,
+        p_product_id: form.product_id,
+        p_location_id: form.location_id,
+        p_sph: specs.sph, p_cyl: specs.cyl, p_axis: specs.axis,
+        p_addition: specs.addition, p_name_key: specs.name_key,
+        p_qty: qty,
+        p_unit_price: Number(form.unit_price),
+        p_amount_paid: Number(form.amount_paid) || 0,
+        p_payment_method: form.payment_method,
+        p_customer_name: form.customer_name || null,
+        p_customer_phone: form.customer_phone || null,
+        p_notes: form.notes || null,
+      }).abortSignal(AbortSignal.timeout(20000))
+
+      let debtError = null
+      if (rpcErr) {
+        // PGRST202 = function not found → migration not run yet, use legacy path
+        if (rpcErr.name === 'AbortError' || /abort/i.test(rpcErr.message)) {
+          throw new Error('Network timed out — check Recent sales before retrying.')
+        }
+        if (rpcErr.code !== 'PGRST202') throw new Error(rpcErr.message)
+        ;({ debtError } = await recordSaleLegacy(specs, qty))
+      }
+
+      // ── Audit log (best-effort, never blocks the UI) ─────────
+      supabase.from('audit_log').insert({
+        company_id: profile.company_id,
+        user_id: profile.id,
+        status: 'SUCCESS',
+        action: 'SALE',
+        details: {
+          product: selectedProduct?.name,
+          location: locations.find(l => l.id === form.location_id)?.code,
+          ...specs, qty,
+          total_amount: totalAmount,
+        },
+      }).then(() => {})
+
+      if (debtError) {
+        flash('error', `Sale recorded but debt entry failed: ${debtError}. Add this balance manually in Debtors.`)
+      } else {
+        flash('success', `Sale recorded — ${selectedProduct?.name} ×${qty}${balance > 0 ? ` | Balance due: ₦${balance.toLocaleString()}` : ''}`)
+      }
+      setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
+    } catch (err) {
+      flash('error', err.message || 'Sale failed')
+    } finally {
+      setLoading(false)
+      fetchRecentSales()
+      checkStock()
+    }
+  }
+
+  // Client-side fallback used only until migration_record_sale_rpc.sql has
+  // been run. Not atomic — the RPC above is the preferred path.
+  async function recordSaleLegacy(specs, qty) {
     // ── Re-verify stock server-side ───────────────────────────
     const stockBase = supabase
       .from('stock').select('id, qty, allocated_qty')
@@ -191,17 +250,14 @@ export default function Sales() {
       .eq('location_id', form.location_id)
     const { data: stockRows, error: stockFetchErr } = await buildStockQuery(stockBase, specs)
 
-    if (stockFetchErr) {
-      flash('error', `Stock check failed: ${stockFetchErr.message}`)
-      setLoading(false); return
-    }
+    if (stockFetchErr) throw new Error(`Stock check failed: ${stockFetchErr.message}`)
 
     const totalAvailable = (stockRows || []).reduce(
       (s, r) => s + (Number(r.qty) - Number(r.allocated_qty || 0)), 0
     )
     if (!stockRows?.length || totalAvailable < qty) {
-      flash('error', `Oversell blocked — only ${totalAvailable} available`)
-      setAvailableStock(totalAvailable); setLoading(false); return
+      setAvailableStock(totalAvailable)
+      throw new Error(`Oversell blocked — only ${totalAvailable} available`)
     }
 
     // ── Deduct stock (highest-qty row first) ──────────────────
@@ -230,8 +286,7 @@ export default function Sales() {
             .update({ qty: d.originalQty, updated_at: new Date() })
             .eq('id', d.id)
         }
-        flash('error', `Stock update failed: ${stockErr.message}`)
-        setLoading(false); return
+        throw new Error(`Stock update failed: ${stockErr.message}`)
       }
 
       deductedRows.push({ id: row.id, originalQty: Number(row.qty) })
@@ -288,8 +343,7 @@ export default function Sales() {
           .update({ qty: d.originalQty, updated_at: new Date() })
           .eq('id', d.id)
       }
-      flash('error', `Sale failed: ${txnErr.message}`)
-      setLoading(false); return
+      throw new Error(`Sale failed: ${txnErr.message}`)
     }
 
     // ── Create debtor record if balance is outstanding ────────
@@ -332,34 +386,9 @@ export default function Sales() {
         ;({ error: debtErr } = await supabase.from('debtors').insert(debtPayload))
       }
 
-      if (debtErr) {
-        flash('error', `Sale recorded but debt entry failed: ${debtErr.message}. Add this balance manually in Debtors.`)
-        setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
-        setAvailableStock(v => v !== null ? v - qty : null)
-        fetchRecentSales()
-        setLoading(false); return
-      }
+      if (debtErr) return { debtError: debtErr.message }
     }
-
-    // ── Audit log ─────────────────────────────────────────────
-    await supabase.from('audit_log').insert({
-      company_id: profile.company_id,
-      user_id: profile.id,
-      status: 'SUCCESS',
-      action: 'SALE',
-      details: {
-        product: selectedProduct?.name,
-        location: locations.find(l => l.id === form.location_id)?.code,
-        ...specs, qty,
-        total_amount: totalAmount,
-      },
-    })
-
-    flash('success', `Sale recorded — ${selectedProduct?.name} ×${qty}${balance > 0 ? ` | Balance due: ₦${balance.toLocaleString()}` : ''}`)
-    setForm(f => ({ ...f, qty: '', amount_paid: '', customer_name: '', customer_phone: '', notes: '' }))
-    setAvailableStock(v => v !== null ? v - qty : null)
-    fetchRecentSales()
-    setLoading(false)
+    return {}
   }
 
   async function handleVoid(sale) {
@@ -370,101 +399,106 @@ export default function Sales() {
     )) return
 
     setVoiding(sale.id)
-
-    // Idempotency guard — prevent voiding the same sale twice
-    const { data: existingVoid } = await supabase.from('transactions')
-      .select('id').eq('company_id', profile.company_id)
-      .eq('type', 'SALE_VOID').ilike('notes', `%${sale.id}%`)
-      .maybeSingle()
-    if (existingVoid) {
-      flash('error', 'This sale has already been voided.')
-      setVoiding(null); return
-    }
-
-    // Normalize specs defensively — strip '+' from addition for base_add products
-    // This ensures the stock query matches even if the transaction was recorded pre-normalization
-    const isBaseProduct = sale.products?.spec_type?.startsWith('base_')
-    const specs = {
-      sph: isBaseProduct ? (sale.sph || '').replace(/^\+/, '') : sale.sph,
-      cyl: sale.cyl,
-      axis: sale.axis,
-      addition: isBaseProduct ? (sale.addition || '').replace(/^\+/, '') : sale.addition,
-      name_key: sale.name_key,
-    }
-
-    // Return qty to stock
-    const base = supabase.from('stock').select('id, qty')
-      .eq('product_id', sale.product_id).eq('location_id', sale.location_id)
-    const { data: stockRow } = await buildStockQuery(base, specs).maybeSingle()
-
-    if (stockRow) {
-      await supabase.from('stock')
-        .update({ qty: stockRow.qty + sale.qty, updated_at: new Date() })
-        .eq('id', stockRow.id)
-    } else {
-      // Stock row was deleted or never existed — recreate it
-      await supabase.from('stock').insert({
-        company_id: profile.company_id,
-        product_id: sale.product_id,
-        location_id: sale.location_id,
-        ...specs,
-        qty: sale.qty,
-      })
-    }
-
-    // Clear ALL linked debtor records for this transaction.
-    // Use a multi-row fetch (not maybeSingle) because a DB trigger may have
-    // created a duplicate row — maybeSingle() would error and settle nothing.
-    const { data: debtorRows } = await supabase.from('debtors')
-      .select('id, balance, amount_paid')
-      .eq('company_id', profile.company_id)
-      .eq('transaction_id', sale.id)
-
-    if (debtorRows?.length) {
-      const totalPaid = debtorRows.reduce((s, r) => s + Number(r.amount_paid || 0), 0)
-      // Settle every row — void cancels the whole obligation
-      await supabase.from('debtors')
-        .update({ is_settled: true, balance: 0, updated_at: new Date() })
-        .eq('transaction_id', sale.id)
-        .eq('company_id', profile.company_id)
-      if (totalPaid > 0) {
-        flash('warn', `⚠️ ₦${totalPaid.toLocaleString()} was already collected on this debt — refund manually (cash or store credit).`)
+    try {
+      // Idempotency guard — prevent voiding the same sale twice
+      const { data: existingVoid } = await supabase.from('transactions')
+        .select('id').eq('company_id', profile.company_id)
+        .eq('type', 'SALE_VOID').ilike('notes', `%${sale.id}%`)
+        .maybeSingle()
+      if (existingVoid) {
+        flash('error', 'This sale has already been voided.')
+        return
       }
+
+      // Normalize specs defensively — strip '+' from addition for base_add products
+      // This ensures the stock query matches even if the transaction was recorded pre-normalization
+      const isBaseProduct = sale.products?.spec_type?.startsWith('base_')
+      const specs = {
+        sph: isBaseProduct ? normSph(sale.sph, true) : sale.sph,
+        cyl: sale.cyl,
+        axis: sale.axis,
+        addition: isBaseProduct ? normSph(sale.addition, true) : sale.addition,
+        name_key: sale.name_key,
+      }
+
+      // Return qty to stock
+      const base = supabase.from('stock').select('id, qty')
+        .eq('product_id', sale.product_id).eq('location_id', sale.location_id)
+      const { data: stockRows } = await buildStockQuery(base, specs)
+      const stockRow = stockRows?.[0]
+
+      if (stockRow) {
+        await supabase.from('stock')
+          .update({ qty: Number(stockRow.qty) + Number(sale.qty), updated_at: new Date() })
+          .eq('id', stockRow.id)
+      } else {
+        // Stock row was deleted or never existed — recreate it
+        await supabase.from('stock').insert({
+          company_id: profile.company_id,
+          product_id: sale.product_id,
+          location_id: sale.location_id,
+          ...specs,
+          qty: sale.qty,
+        })
+      }
+
+      // Clear ALL linked debtor records for this transaction.
+      // Use a multi-row fetch (not maybeSingle) because a DB trigger may have
+      // created a duplicate row — maybeSingle() would error and settle nothing.
+      const { data: debtorRows } = await supabase.from('debtors')
+        .select('id, balance, amount_paid')
+        .eq('company_id', profile.company_id)
+        .eq('transaction_id', sale.id)
+
+      if (debtorRows?.length) {
+        const totalPaid = debtorRows.reduce((s, r) => s + Number(r.amount_paid || 0), 0)
+        // Settle every row — void cancels the whole obligation
+        await supabase.from('debtors')
+          .update({ is_settled: true, balance: 0, updated_at: new Date() })
+          .eq('transaction_id', sale.id)
+          .eq('company_id', profile.company_id)
+        if (totalPaid > 0) {
+          flash('warn', `⚠️ ₦${totalPaid.toLocaleString()} was already collected on this debt — refund manually (cash or store credit).`)
+        }
+      }
+
+      // Write SALE_VOID transaction — mirror the financial fields from the
+      // original sale so the dashboard can net revenue correctly.
+      await supabase.from('transactions').insert({
+        company_id:   profile.company_id,
+        type:         'SALE_VOID',
+        product_id:   sale.product_id,
+        location_id:  sale.location_id,
+        ...specs,
+        qty:          sale.qty,
+        unit_price:   sale.unit_price   || null,
+        total_amount: sale.total_amount || null,
+        amount_paid:  sale.amount_paid  || null,
+        created_by:   profile.id,
+        notes:        `Return/void of sale ${sale.id}`,
+      })
+
+      await supabase.from('audit_log').insert({
+        company_id: profile.company_id, user_id: profile.id,
+        status: 'SUCCESS', action: 'SALE_VOID',
+        details: {
+          voided_sale: sale.id,
+          product: sale.products?.name,
+          location: sale.locations?.code,
+          qty: sale.qty,
+          customer: sale.customer_name || null,
+          refund_amount: sale.total_amount || null,
+          debt_cleared: debtorRows?.length > 0,
+        },
+      })
+
+      flash('success', `Sale voided — ${sale.qty} unit${sale.qty !== 1 ? 's' : ''} returned to ${sale.locations?.code}.`)
+    } catch (err) {
+      flash('error', `Void failed: ${err.message}`)
+    } finally {
+      fetchRecentSales()
+      setVoiding(null)
     }
-
-    // Write SALE_VOID transaction — mirror the financial fields from the
-    // original sale so the dashboard can net revenue correctly.
-    await supabase.from('transactions').insert({
-      company_id:   profile.company_id,
-      type:         'SALE_VOID',
-      product_id:   sale.product_id,
-      location_id:  sale.location_id,
-      ...specs,
-      qty:          sale.qty,
-      unit_price:   sale.unit_price   || null,
-      total_amount: sale.total_amount || null,
-      amount_paid:  sale.amount_paid  || null,
-      created_by:   profile.id,
-      notes:        `Return/void of sale ${sale.id}`,
-    })
-
-    await supabase.from('audit_log').insert({
-      company_id: profile.company_id, user_id: profile.id,
-      status: 'SUCCESS', action: 'SALE_VOID',
-      details: {
-        voided_sale: sale.id,
-        product: sale.products?.name,
-        location: sale.locations?.code,
-        qty: sale.qty,
-        customer: sale.customer_name || null,
-        refund_amount: sale.total_amount || null,
-        debt_cleared: debtorRows?.length > 0,
-      },
-    })
-
-    flash('success', `Sale voided — ${sale.qty} unit${sale.qty !== 1 ? 's' : ''} returned to ${sale.locations?.code}.`)
-    fetchRecentSales()
-    setVoiding(null)
   }
 
   function formatSpec(sale) {
